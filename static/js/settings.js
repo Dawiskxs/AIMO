@@ -42,10 +42,16 @@ const SETTING_HELP = {
   high_watermark: 'How many turns the model generates per batch.',
   generator_sleep: 'Seconds the generator waits between buffer checks.',
   banned_phrase_window: 'How many recent lines are fed back to the model as "do not repeat".',
-  tts_enabled: 'Synthesize spoken audio for each turn using local Kokoro TTS.',
+  tts_enabled: 'Synthesize spoken audio for each turn using local TTS.',
+    tts_backend: 'Choose the TTS engine: Kokoro (StyleTTS2, PyTorch) or Piper (ONNX, VITS).',
   kokoro_voice: 'Kokoro voice name used for speech (e.g. af_heart).',
   kokoro_speed: 'Speech speed multiplier (1.0 = normal).',
   kokoro_device: 'Compute device for TTS: auto, cpu, or cuda (GPU).',
+    piper_voice: 'Piper voice model name (e.g. en_US-lessac-medium). Model files (.onnx + .onnx.json) must be in ~/.config/aimee/models/piper/.',
+    piper_speed: 'Speech speed multiplier / length_scale (1.0 = normal, lower = slower).',
+    piper_noise_scale: 'Noise scale for synthesis variation (0.0–2.0). Higher = more random.',
+    piper_noise_w: 'Noise width for phoneme duration variation (0.0–2.0).',
+    piper_sentence_silence: 'Extra silence between sentences in seconds (0.0–5.0).',
   stash_video_enabled: 'Allow the AI to cut to random video clips from Stash.',
   video_chance: 'Probability (0–1) that any given turn becomes a video interlude.',
   stash_url: 'Base URL of your Stash server, e.g. http://192.168.1.50:9999.',
@@ -291,6 +297,11 @@ async function loadSettings() {
   settingsState.avatarModels = data.avatar_model_options || [];
   populateSelect($settings('settings-avatar-model'), settingsState.avatarModels, data.avatar_model || '');
 
+    // Populate available languages from server
+    if (data.available_languages) {
+      populateSelect($settings('settings-language'), data.available_languages, data.language || 'en');
+    }
+
   fillSettingFields(data);
   applyStatusPanel(data);
 
@@ -505,6 +516,123 @@ function wireSettingsEvents() {
   for (const el of $$settings('[data-setting]')) {
     const evt = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
     el.addEventListener(evt, () => setDirty(true));
+  }
+
+  // TTS backend switch: show/hide backend-specific fields
+  const ttsBackendSelect = $settings('settings-tts-backend');
+  const kokoroFields = $settings('settings-kokoro-fields');
+  const piperFields = $settings('settings-piper-fields');
+
+  function updateTtsFields() {
+    if (!ttsBackendSelect || !kokoroFields || !piperFields) return;
+    const backend = ttsBackendSelect.value;
+    kokoroFields.style.display = backend === 'kokoro' ? 'grid' : 'none';
+    piperFields.style.display = backend === 'piper' ? 'grid' : 'none';
+  }
+
+  if (ttsBackendSelect) {
+    ttsBackendSelect.addEventListener('change', updateTtsFields);
+    // Initial update
+    updateTtsFields();
+  }
+
+  // Piper voice model download
+  const piperVoiceSelect = $settings('settings-piper-voice');
+  const piperDownloadBtn = $settings('settings-piper-download');
+  const piperCustomInput = $settings('settings-piper-voice-custom');
+  const piperCustomContainer = $settings('settings-piper-custom');
+  const piperDownloadStatus = $settings('settings-piper-download-status');
+  const piperDownloadMessage = $settings('settings-piper-download-message');
+  const piperDownloadProgress = $settings('settings-piper-download-progress');
+
+  if (piperVoiceSelect && piperDownloadBtn) {
+    // Show/hide custom input when "custom" is selected
+    piperVoiceSelect.addEventListener('change', () => {
+      if (piperVoiceSelect.value === 'custom') {
+        piperCustomContainer.style.display = 'block';
+        piperCustomInput.focus();
+        // Use custom input value for the setting
+        piperCustomInput.dataset.setting = 'piper_voice';
+        piperVoiceSelect.dataset.setting = '';
+      } else {
+        piperCustomContainer.style.display = 'none';
+        piperVoiceSelect.dataset.setting = 'piper_voice';
+        delete piperCustomInput.dataset.setting;
+      }
+    });
+
+    // Download button handler
+    piperDownloadBtn.addEventListener('click', async () => {
+      const voiceKey = piperVoiceSelect.value === 'custom' ? piperCustomInput.value.trim() : piperVoiceSelect.value;
+      if (!voiceKey || voiceKey === 'custom') {
+        setSettingsMessage('Please select or enter a voice model key', true);
+        return;
+      }
+
+      const sentenceSilenceInput = $settings('settings-piper-sentence-silence');
+      
+      piperDownloadBtn.disabled = true;
+      piperDownloadBtn.innerHTML = '<svg class="spinner" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg> Downloading...';
+      piperDownloadStatus.style.display = 'block';
+      piperDownloadMessage.textContent = `Downloading ${voiceKey}...`;
+      piperDownloadProgress.value = 0;
+      
+      // Disable sentence silence field during download to prevent breaking other fields
+      if (sentenceSilenceInput) {
+        sentenceSilenceInput.disabled = true;
+      }
+
+      try {
+        const response = await fetch('/api/piper/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ voice_key: voiceKey })
+        });
+
+        const reader = response.body.getReader();
+        const contentLength = response.headers.get('Content-Length');
+        let received = 0;
+              let responseText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value.length;
+                // Accumulate response text for JSON parsing later
+                responseText += new TextDecoder().decode(value);
+          if (contentLength) {
+            piperDownloadProgress.value = Math.round((received / parseInt(contentLength)) * 100);
+          }
+        }
+
+              const data = JSON.parse(responseText);
+        if (response.ok && data.ok) {
+                  if (data.already_exists) {
+                    piperDownloadMessage.textContent = `Model ${voiceKey} is already downloaded.`;
+                    piperDownloadProgress.value = 100;
+                    setSettingsMessage(`Piper voice ${voiceKey} is already downloaded.`);
+                  } else {
+                    piperDownloadMessage.textContent = `Successfully downloaded ${voiceKey}!`;
+                    piperDownloadProgress.value = 100;
+                    setSettingsMessage(`Piper voice ${voiceKey} downloaded successfully.`);
+                  }
+        } else {
+          piperDownloadMessage.textContent = `Error: ${data.error || 'Download failed'}`;
+          setSettingsMessage(`Download failed: ${data.error || 'Unknown error'}`, true);
+        }
+      } catch (err) {
+        piperDownloadMessage.textContent = `Error: ${err.message}`;
+        setSettingsMessage(`Download failed: ${err.message}`, true);
+      } finally {
+        piperDownloadBtn.disabled = false;
+        piperDownloadBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download';
+        // Re-enable sentence silence field after download
+        const sentenceSilenceInput = $settings('settings-piper-sentence-silence');
+        if (sentenceSilenceInput) {
+          sentenceSilenceInput.disabled = false;
+        }
+      }
+    });
   }
 
   for (const provider of AI_PROVIDERS) {

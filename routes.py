@@ -4,6 +4,7 @@ routes.py
 All Flask HTTP routes for the OSSM Controller + Coyote BLE.
 """
 
+import atexit
 import json
 import logging
 import os
@@ -13,11 +14,20 @@ import subprocess
 import sys
 import threading
 import time
-import atexit
 from pathlib import Path
 
-from flask import Flask, Response, abort, jsonify, render_template, request, send_file, url_for
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 
+import tts
 from ai_connector import (
     GoogleAIConnector,
     GroqAIConnector,
@@ -30,6 +40,7 @@ from config import (
     MODEL_OPTIONS,
     OLLAMA_TIMEOUT,
     OPENROUTER_MODEL_OPTIONS,
+    get_supported_languages,
 )
 from devices.registry import (
     get_active_device,
@@ -38,21 +49,21 @@ from devices.registry import (
     set_active_device,
 )
 from orchestrator import SessionOrchestrator
+from prompt_builder import get_pacing_strategies, get_persona_moods
 from prompt_store import (
     clear_current_prompts,
-    list_base_prompt_names,
+    list_prompt_names_by_language,
     prompt_exists_in_base,
     resolve_prompt_path,
     write_current_prompt,
 )
-from prompt_builder import get_pacing_strategies, get_persona_moods
 from settings_store import load_settings, mask_secret, provider_presence, save_settings
 from stash_client import StashClient
-import tts
 
 # Non-secret scalar settings the Settings UI can read back and write.
 PLAIN_SETTING_KEYS = (
     "google_model", "groq_model", "openrouter_model", "tts_enabled",
+    "tts_backend",
     "ollama_base_url", "ollama_model",
     "stash_url", "stash_tag", "stash_video_enabled",
     "stash_proxy_enabled", "stash_proxy_address", "video_chance",
@@ -62,11 +73,13 @@ PLAIN_SETTING_KEYS = (
     "default_turns", "banned_phrase_window", "display_interval",
     "low_watermark", "high_watermark", "generator_sleep",
     "kokoro_voice", "kokoro_speed", "kokoro_device",
+    "piper_voice", "piper_speed", "piper_noise_scale", "piper_noise_w", "piper_sentence_silence",
     "rvc_enabled", "rvc_pitch", "rvc_index_rate",
     "avatar_model",
     "device_ws_url", "ossm_ble_address", "coyote_ble_name",
     "coyote_soft_limit_a", "coyote_soft_limit_b", "coyote_freq_ms",
     "buttplug_ws_url", "buttplug_vibe_floor",
+    "language",
 )
 SECRET_SETTING_KEYS = (
     "google_api_key", "groq_api_key", "openrouter_api_key", "ollama_api_key", "stash_api_key",
@@ -520,8 +533,12 @@ def register_routes(app: Flask) -> None:
             "openrouter_validation": openrouter_validation,
             "ollama_validation": ollama_validation,
             "stash_validation": _validation_from_settings(settings, "stash_validation"),
-            "prompt_names": list_base_prompt_names(),
+            "prompt_names": list_prompt_names_by_language(settings.get("language", "en")),
             "avatar_model_options": _list_avatar_models(),
+                        "available_languages": [
+                            {"code": code, "name": {"en": "English", "cs": "Čeština", "de": "Deutsch"}.get(code, code.upper())}
+                            for code in get_supported_languages()
+                        ],
         }
         payload.update(_plain_settings_payload(settings))
         return jsonify(payload)
@@ -559,6 +576,9 @@ def register_routes(app: Flask) -> None:
         if _changed(body, current, "stash_api_key", "stash_url", "stash_tag",
                     "stash_proxy_enabled", "stash_proxy_address"):
             next_settings["stash_validation"] = pending
+        # TTS backend change - no validation to reset, but orchestrator will re-configure
+        if _changed(body, current, "tts_backend"):
+            log.info("TTS backend changed to %s", body.get("tts_backend"))
 
         save_settings(next_settings)
         saved = load_settings()
@@ -578,7 +598,7 @@ def register_routes(app: Flask) -> None:
                 "ollama_validation": saved.get("ollama_validation"),
                 "stash_validation": saved.get("stash_validation"),
                 "tts_enabled": saved.get("tts_enabled", True),
-                "prompt_names": list_base_prompt_names(),
+                "prompt_names": list_prompt_names_by_language(saved.get("language", "en")),
             }
         )
 
@@ -967,6 +987,95 @@ def register_routes(app: Flask) -> None:
     def api_tts_clear():
         count = tts.clear_cache()
         return jsonify({"ok": True, "removed": count})
+
+    @app.post("/api/piper/download")
+    def api_piper_download():
+        """Download a Piper voice model from the official repository."""
+        body = request.get_json(silent=True) or {}
+        voice_key = body.get("voice_key", "").strip()
+        if not voice_key:
+            return jsonify({"ok": False, "error": "Missing voice_key"}), 400
+
+        try:
+            import hashlib
+            import json as jsonlib
+            import urllib.request
+
+            from config import PIPER_MODELS_DIR
+
+            # Check if model is already downloaded
+            onnx_dest = PIPER_MODELS_DIR / f"{voice_key}.onnx"
+            json_dest = PIPER_MODELS_DIR / f"{voice_key}.onnx.json"
+            if onnx_dest.exists() and json_dest.exists():
+                return jsonify({"ok": True, "voice_key": voice_key, "path": str(PIPER_MODELS_DIR), "already_exists": True, "message": "Model already downloaded"})
+
+            # Load voices manifest from HuggingFace (more up-to-date than GitHub)
+            manifest_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/voices.json"
+            with urllib.request.urlopen(manifest_url) as resp:
+                voices = jsonlib.load(resp)
+
+            if voice_key not in voices:
+                return jsonify({"ok": False, "error": f"Unknown voice key: {voice_key}"}), 404
+
+            voice_info = voices[voice_key]
+            files = voice_info.get("files", {})
+
+            # Find .onnx and .onnx.json files
+            onnx_file = None
+            json_file = None
+            for fname, finfo in files.items():
+                if fname.endswith(".onnx") and not fname.endswith(".onnx.json"):
+                    onnx_file = (fname, finfo)
+                elif fname.endswith(".onnx.json"):
+                    json_file = (fname, finfo)
+
+            if not onnx_file or not json_file:
+                return jsonify({"ok": False, "error": "Voice files not found in manifest"}), 404
+
+            PIPER_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+            def download_and_verify(url, expected_size, expected_md5, dest_path):
+                """Download file with progress and verify MD5."""
+                with urllib.request.urlopen(url) as resp:
+                    int(resp.headers.get('Content-Length', expected_size))
+                    downloaded = 0
+                    md5_hash = hashlib.md5()
+                    with open(dest_path, 'wb') as f:
+                        while True:
+                            chunk = resp.read(8192)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            md5_hash.update(chunk)
+                            downloaded += len(chunk)
+                    actual_md5 = md5_hash.hexdigest()
+                    if actual_md5 != expected_md5:
+                        dest_path.unlink(missing_ok=True)
+                        raise ValueError(f"MD5 mismatch for {dest_path.name}: expected {expected_md5}, got {actual_md5}")
+                    if downloaded != expected_size:
+                        log.warning(f"Size mismatch for {dest_path.name}: expected {expected_size}, got {downloaded}")
+                return True
+
+            base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+
+            # Download .onnx
+            onnx_name, onnx_info = onnx_file
+            onnx_dest = PIPER_MODELS_DIR / f"{voice_key}.onnx"
+            onnx_url = base_url + onnx_name
+            download_and_verify(onnx_url, onnx_info["size_bytes"], onnx_info["md5_digest"], onnx_dest)
+
+            # Download .onnx.json
+            json_name, json_info = json_file
+            json_dest = PIPER_MODELS_DIR / f"{voice_key}.onnx.json"
+            json_url = base_url + json_name
+            download_and_verify(json_url, json_info["size_bytes"], json_info["md5_digest"], json_dest)
+
+            log.info(f"Downloaded Piper voice {voice_key} to {PIPER_MODELS_DIR}")
+            return jsonify({"ok": True, "voice_key": voice_key, "path": str(PIPER_MODELS_DIR)})
+
+        except Exception as exc:
+            log.error(f"Piper download error for {voice_key}: {exc}")
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     @app.post("/api/tts/synthesize")
     def api_tts_synthesize():

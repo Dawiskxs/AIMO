@@ -222,7 +222,25 @@
         <label for="settings-tts-enabled">Enable TTS synthesis for AI responses</label>
       </div>
 
-      <div class="settings-grid">
+          <div class="settings-field">
+            <label for="settings-tts-backend">TTS Backend</label>
+            <select id="settings-tts-backend" data-setting="tts_backend">
+              <option value="kokoro">Kokoro (StyleTTS2, PyTorch)</option>
+              <option value="piper">Piper (ONNX, VITS)</option>
+            </select>
+          </div>
+
+                <!-- Language selection -->
+                <div class="settings-field">
+                  <label for="settings-language">Language</label>
+                  <select id="settings-language" data-setting="language">
+                                    <!-- Options populated dynamically from server via available_languages -->
+                  </select>
+                  <div class="settings-status" id="settings-language-status">Uses language-specific prompts</div>
+                </div>
+
+          <!-- Kokoro-specific settings -->
+          <div class="settings-grid" id="settings-kokoro-fields">
         <div class="settings-field">
           <label for="settings-kokoro-voice">Voice</label>
           <input type="text" id="settings-kokoro-voice" data-setting="kokoro_voice"
@@ -242,6 +260,106 @@
           </select>
         </div>
       </div>
+
+          <!-- Piper-specific settings -->
+          <div class="settings-grid" id="settings-piper-fields" style="display: none;">
+            <!-- Voice Model with integrated download progress -->
+            <div class="settings-field">
+              <label for="settings-piper-voice">Voice Model</label>
+              <div class="settings-input-group">
+                <select id="settings-piper-voice" data-setting="piper_voice">
+                  <option value="en_US-lessac-medium">en_US-lessac-medium (English US, Medium)</option>
+                  <option value="en_US-lessac-high">en_US-lessac-high (English US, High)</option>
+                  <option value="en_US-lessac-low">en_US-lessac-low (English US, Low)</option>
+                  <option value="en_US-amy-low">en_US-amy-low (English US, Low)</option>
+                  <option value="en_US-amy-medium">en_US-amy-medium (English US, Medium)</option>
+                  <option value="en_US-ryan-high">en_US-ryan-high (English US, High)</option>
+                  <option value="en_US-ryan-low">en_US-ryan-low (English US, Low)</option>
+                  <option value="en_US-ryan-medium">en_US-ryan-medium (English US, Medium)</option>
+                  <option value="en_US-ljspeech-high">en_US-ljspeech-high (English US, High)</option>
+                  <option value="en_US-ljspeech-low">en_US-ljspeech-low (English US, Low)</option>
+                  <option value="en_US-ljspeech-medium">en_US-ljspeech-medium (English US, Medium)</option>
+                  <option value="en_GB-alan-low">en_GB-alan-low (English UK, Low)</option>
+                  <option value="en_GB-alan-medium">en_GB-alan-medium (English UK, Medium)</option>
+                  <option value="en_GB-alba-medium">en_GB-alba-medium (English UK, Medium)</option>
+                  <option value="en_GB-aru-medium">en_GB-aru-medium (English UK, 12 speakers)</option>
+                  <option value="en_GB-jenny_dioco-medium">en_GB-jenny_dioco-medium (English UK, Medium)</option>
+                  <option value="en_GB-northern_english_male-medium">en_GB-northern_english_male-medium (English UK, Medium)</option>
+                  <option value="en_GB-semaine-medium">en_GB-semaine-medium (English UK, Medium)</option>
+                  <option value="en_GB-vctk-medium">en_GB-vctk-medium (English UK, 109 speakers)</option>
+                  <option value="cs_CZ-jirka-medium">cs_CZ-jirka-medium (Czech, Medium)</option>
+                  <option value="cs_CZ-kasandra-medium">cs_CZ-kasandra-medium (Czech, Medium)</option>
+                  <option value="de_DE-thorsten-low">de_DE-thorsten-low (German, Low)</option>
+                  <option value="de_DE-thorsten-medium">de_DE-thorsten-medium (German, Medium)</option>
+                  <option value="de_DE-thorsten-high">de_DE-thorsten-high (German, High)</option>
+                  <option value="de_DE-thorsten_emotional-medium">de_DE-thorsten_emotional-medium (German, 8 emotions)</option>
+                  <option value="de_DE-eva_k-x_low">de_DE-eva_k-x_low (German, X-Low)</option>
+                  <option value="de_DE-kerstin-low">de_DE-kerstin-low (German, Low)</option>
+                  <option value="de_DE-pavoque-low">de_DE-pavoque-low (German, Low)</option>
+                  <option value="de_DE-ramona-low">de_DE-ramona-low (German, Low)</option>
+                  <option value="de_DE-karlsson-low">de_DE-karlsson-low (German, Low)</option>
+                  <option value="fr_FR-gilles-low">fr_FR-gilles-low (French, Low)</option>
+                  <option value="fr_FR-siwis-low">fr_FR-siwis-low (French, Low)</option>
+                  <option value="fr_FR-upmc-medium">fr_FR-upmc-medium (French, Medium)</option>
+                  <option value="es_ES-davefx-medium">es_ES-davefx-medium (Spanish, Medium)</option>
+                  <option value="es_ES-sharvard-medium">es_ES-sharvard-medium (Spanish, Medium)</option>
+                  <option value="it_IT-riccardo-x_low">it_IT-riccardo-x_low (Italian, X-Low)</option>
+                  <option value="pl_PL-darkman-medium">pl_PL-darkman-medium (Polish, Medium)</option>
+                  <option value="pl_PL-mls-medium">pl_PL-mls-medium (Polish, Medium)</option>
+                  <option value="ru_RU-irina-medium">ru_RU-irina-medium (Russian, Medium)</option>
+                  <option value="ru_RU-denis-low">ru_RU-denis-low (Russian, Low)</option>
+                  <option value="ru_RU-dmitry-medium">ru_RU-dmitry-medium (Russian, Medium)</option>
+                  <option value="ru_RU-elina-medium">ru_RU-elina-medium (Russian, Medium)</option>
+                  <option value="uk_UK-lada-x_low">uk_UK-lada-x_low (Ukrainian, X-Low)</option>
+                  <option value="uk_UK-ukrainian_tts-medium">uk_UK-ukrainian_tts-medium (Ukrainian, Medium)</option>
+                  <option value="nl_NL-mls-medium">nl_NL-mls-medium (Dutch, Medium)</option>
+                  <option value="pt_BR-faber-medium">pt_BR-faber-medium (Portuguese BR, Medium)</option>
+                  <option value="pt_BR-lampada-medium">pt_BR-lampada-medium (Portuguese BR, Medium)</option>
+                  <option value="ja_JP-kokoro-medium">ja_JP-kokoro-medium (Japanese, Medium)</option>
+                  <option value="zh_CN-huihui-medium">zh_CN-huihui-medium (Chinese, Medium)</option>
+                  <option value="zh_CN-huayan-medium">zh_CN-huayan-medium (Chinese, Medium)</option>
+                  <option value="custom">-- Custom voice key --</option>
+                </select>
+                <button type="button" class="btn btn-secondary" id="settings-piper-download" title="Download selected voice model">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Download
+                </button>
+              </div>
+              <div class="settings-note">Model files (.onnx + .onnx.json) will be saved to <code>models/piper/</code> in the project folder (or <code>~/.config/aimee/models/piper/</code> when running as a packaged app)</div>
+              <div class="settings-note" id="settings-piper-custom" style="display: none;">
+                <input type="text" id="settings-piper-voice-custom" placeholder="Enter custom voice key (e.g. cs_CZ-jirka-medium)" />
+              </div>
+              <!-- Download progress indicator right under Voice Model -->
+              <div class="settings-field" id="settings-piper-download-status" style="display: none; margin-top: 8px;">
+                <div class="settings-note" id="settings-piper-download-message" style="margin-bottom: 4px;"></div>
+                <progress id="settings-piper-download-progress" value="0" max="100" style="width: 100%; height: 8px;"></progress>
+              </div>
+            </div>
+            <div class="settings-field">
+              <label for="settings-piper-speed">Speed (length_scale)</label>
+              <input type="number" id="settings-piper-speed" data-setting="piper_speed" data-type="number"
+                     min="0.1" max="4" step="0.05" />
+            </div>
+            <div class="settings-field">
+              <label for="settings-piper-noise-scale">Noise Scale</label>
+              <input type="number" id="settings-piper-noise-scale" data-setting="piper_noise_scale" data-type="number"
+                     min="0.0" max="2.0" step="0.01" />
+            </div>
+            <div class="settings-field">
+              <label for="settings-piper-noise-w">Noise Width</label>
+              <input type="number" id="settings-piper-noise-w" data-setting="piper_noise_w" data-type="number"
+                     min="0.0" max="2.0" step="0.01" />
+            </div>
+            <div class="settings-field">
+              <label for="settings-piper-sentence-silence">Sentence Silence (s)</label>
+              <input type="number" id="settings-piper-sentence-silence" data-setting="piper_sentence_silence" data-type="number"
+                     min="0.0" max="5.0" step="0.1" />
+            </div>
+          </div>
     </div>
 
     <!-- ── Avatar ────────────────────────────────────────────────────────── -->
