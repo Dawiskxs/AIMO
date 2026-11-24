@@ -1,0 +1,1 @@
+Dir werden {n_turns} Turns gegeben um die Session fortzusetzen. Halte Kontinuität mit dem vorherigen Kontext und lass die Handlung kohärent.

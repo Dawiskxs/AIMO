@@ -14,45 +14,51 @@ from typing import Any
 
 from config import (
     APP_CONFIG_DIR,
-    SETTINGS_FILE,
-    STASH_URL,
-    STASH_API_KEY,
-    STASH_TAG,
-    STASH_PROXY_ENABLED,
-    STASH_PROXY_ADDRESS,
-    STASH_VIDEO_ENABLED,
-    VIDEO_CHANCE,
+    BANNED_PHRASE_WINDOW,
+    BIG_MODEL_MAX_RETRIES,
+    BIG_MODEL_RETRY_DELAY,
+    BUTTPLUG_VIBE_FLOOR,
+    BUTTPLUG_WS_URL,
+    COYOTE_BLE_NAME,
+    COYOTE_DEFAULT_FREQ_MS,
+    COYOTE_SOFT_LIMIT_A,
+    COYOTE_SOFT_LIMIT_B,
+    DEFAULT_AVATAR_MODEL,
+    DEFAULT_DEVICE_WS_URL,
+    DEFAULT_TURNS,
+    DISPLAY_INTERVAL,
+    GENERATION_OPTIONS,
+    GENERATOR_SLEEP,
     GOOGLE_TIMEOUT,
     GROQ_TIMEOUT,
+    HIGH_WATERMARK,
+    KOKORO_DEVICE,
+    KOKORO_SPEED,
+    KOKORO_VOICE,
+    LOW_WATERMARK,
     OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
     OLLAMA_TIMEOUT,
     OPENROUTER_MODEL,
     OPENROUTER_TIMEOUT,
-    BIG_MODEL_MAX_RETRIES,
-    BIG_MODEL_RETRY_DELAY,
-    GENERATION_OPTIONS,
-    DEFAULT_TURNS,
-    BANNED_PHRASE_WINDOW,
-    DISPLAY_INTERVAL,
-    LOW_WATERMARK,
-    HIGH_WATERMARK,
-    GENERATOR_SLEEP,
-    KOKORO_VOICE,
-    KOKORO_SPEED,
-    KOKORO_DEVICE,
+    PIPER_NOISE_SCALE,
+    PIPER_NOISE_W,
+    PIPER_SENTENCE_SILENCE,
+    PIPER_SPEED,
+    PIPER_VOICE,
     RVC_ENABLED,
-    RVC_PITCH,
     RVC_INDEX_RATE,
-    DEFAULT_DEVICE_WS_URL,
-    BUTTPLUG_WS_URL,
-    BUTTPLUG_VIBE_FLOOR,
-    COYOTE_BLE_NAME,
-    COYOTE_SOFT_LIMIT_A,
-    COYOTE_SOFT_LIMIT_B,
-    COYOTE_DEFAULT_FREQ_MS,
-    DEFAULT_AVATAR_MODEL,
+    RVC_PITCH,
+    SETTINGS_FILE,
+    STASH_API_KEY,
+    STASH_PROXY_ADDRESS,
+    STASH_PROXY_ENABLED,
+    STASH_TAG,
+    STASH_URL,
+    STASH_VIDEO_ENABLED,
+    VIDEO_CHANCE,
+    get_supported_languages,
 )
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -96,9 +102,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "high_watermark": HIGH_WATERMARK,
     "generator_sleep": GENERATOR_SLEEP,
     # ── Text-to-speech ─────────────────────────────────────────────────────
+        "tts_backend": "kokoro",          # "kokoro" | "piper"
+    "language": "en",                # dynamically validated against get_supported_languages()
     "kokoro_voice": KOKORO_VOICE,
     "kokoro_speed": KOKORO_SPEED,
     "kokoro_device": KOKORO_DEVICE,
+        "piper_voice": PIPER_VOICE,
+        "piper_speed": PIPER_SPEED,
+        "piper_noise_scale": PIPER_NOISE_SCALE,
+        "piper_noise_w": PIPER_NOISE_W,
+        "piper_sentence_silence": PIPER_SENTENCE_SILENCE,
     # RVC re-timbres Kokoro output into the target voice.  Frame-synchronous,
     # so word timings and visemes are unaffected.
     "rvc_enabled": RVC_ENABLED,
@@ -234,11 +247,24 @@ def _normalize_settings(settings: dict[str, Any]) -> dict[str, Any]:
     settings["generator_sleep"] = _as_float(settings.get("generator_sleep"), d["generator_sleep"], 0.1, 60.0)
 
     # Text-to-speech
+    settings["tts_backend"] = _as_clean_text(settings.get("tts_backend")).lower() or d["tts_backend"]
+    if settings["tts_backend"] not in ("kokoro", "piper"):
+        settings["tts_backend"] = d["tts_backend"]
     settings["kokoro_voice"] = _as_clean_text(settings.get("kokoro_voice")) or d["kokoro_voice"]
     settings["kokoro_speed"] = _as_float(settings.get("kokoro_speed"), d["kokoro_speed"], 0.1, 4.0)
     device = _as_clean_text(settings.get("kokoro_device")).lower() or d["kokoro_device"]
     settings["kokoro_device"] = device if device in ("auto", "cpu", "cuda") else d["kokoro_device"]
+    settings["piper_voice"] = _as_clean_text(settings.get("piper_voice")) or d["piper_voice"]
+    settings["piper_speed"] = _as_float(settings.get("piper_speed"), d["piper_speed"], 0.1, 4.0)
+    settings["piper_noise_scale"] = _as_float(settings.get("piper_noise_scale"), d["piper_noise_scale"], 0.0, 2.0)
+    settings["piper_noise_w"] = _as_float(settings.get("piper_noise_w"), d["piper_noise_w"], 0.0, 2.0)
+    settings["piper_sentence_silence"] = _as_float(settings.get("piper_sentence_silence"), d["piper_sentence_silence"], 0.0, 5.0)
 
+    supported_languages = get_supported_languages()
+    lang = _as_clean_text(settings.get("language")).lower()
+    if lang not in supported_languages:
+        lang = "en"  # default fallback
+    settings["language"] = lang
     # RVC voice conversion.  Pitch is clamped to +/-6 semitones: the model is
     # only well-conditioned over its training F0 range (~157-252 Hz here), and
     # transposing much past +3 makes the output thin and artifacty.

@@ -11,21 +11,19 @@ import logging
 import random
 import re
 from pathlib import Path
-from typing import Any
 
 from config import (
+    AI_LANGUAGE,
     BANNED_PHRASE_WINDOW,
     DEVICE_PROMPT_FALLBACK,
-    EXAMPLES_DIR,
     PACING_STRATEGIES_FILE,
     PERSONA_MOODS_FILE,
-    PROMPT_DEVICES_DIR,
     PROMPT_FILE,
     USER_TURN_TASK_FILE,
 )
 from feedback_store import load_banned_phrases
 from pattern_loader import PatternLoader
-from prompt_store import resolve_prompt_path
+from prompt_store import resolve_prompt_path_by_language
 from response_parser import Turn
 from session_manager import DeviceState
 
@@ -45,8 +43,10 @@ _REACTION_NOTES = {
 _VIDEO_BLOCK = re.compile(r"\{\{#VIDEO\}\}(.*?)\{\{/VIDEO\}\}", re.DOTALL)
 
 
-def _read_nonempty_lines(path: Path) -> list[str]:
-    resolved = resolve_prompt_path(path)
+def _read_nonempty_lines(path: Path, language: str | None = None) -> list[str]:
+    from config import AI_LANGUAGE
+    lang = language or AI_LANGUAGE
+    resolved = resolve_prompt_path_by_language(path, lang)
     if not resolved.exists():
         log.warning("Prompt list file not found: %s", resolved)
         return []
@@ -61,8 +61,10 @@ def _read_nonempty_lines(path: Path) -> list[str]:
         return []
 
 
-def _read_text_file(path: Path) -> str:
-    resolved = resolve_prompt_path(path)
+def _read_text_file(path: Path, language: str | None = None) -> str:
+    from config import AI_LANGUAGE
+    lang = language or AI_LANGUAGE
+    resolved = resolve_prompt_path_by_language(path, lang)
     if not resolved.exists():
         log.warning("Prompt text file not found: %s", resolved)
         return ""
@@ -81,28 +83,33 @@ DEVICE_PROMPT_ALIASES = {
 }
 
 
-def get_device_block(device_type: str | None) -> str:
+def get_device_block(device_type: str | None, language: str | None = None) -> str:
     """Return the instruction block describing ``device_type``.
 
     Falls back to the generic block when the type is unknown or has no file of
     its own, so a newly added driver still produces a coherent prompt instead of
     inheriting the previous device's physical vocabulary.
     """
+    from config import AI_LANGUAGE, get_prompt_language_dir
+    lang = language or AI_LANGUAGE
     name = (device_type or DEVICE_PROMPT_FALLBACK).strip().lower()
     name = DEVICE_PROMPT_ALIASES.get(name, name)
-    block = _read_text_file(PROMPT_DEVICES_DIR / f"{name}.txt")
+    
+    # Use language-specific devices directory
+    lang_devices_dir = get_prompt_language_dir(lang) / "devices"
+    block = _read_text_file(lang_devices_dir / f"{name}.txt", lang)
     if not block and name != DEVICE_PROMPT_FALLBACK:
         log.warning("No device prompt for %r; using %s", name, DEVICE_PROMPT_FALLBACK)
-        block = _read_text_file(PROMPT_DEVICES_DIR / f"{DEVICE_PROMPT_FALLBACK}.txt")
+        block = _read_text_file(lang_devices_dir / f"{DEVICE_PROMPT_FALLBACK}.txt", lang)
     return block
 
 
-def get_persona_moods() -> list[str]:
-    return _read_nonempty_lines(PERSONA_MOODS_FILE)
+def get_persona_moods(language: str | None = None) -> list[str]:
+    return _read_nonempty_lines(PERSONA_MOODS_FILE, language)
 
 
-def get_pacing_strategies() -> list[str]:
-    return _read_nonempty_lines(PACING_STRATEGIES_FILE)
+def get_pacing_strategies(language: str | None = None) -> list[str]:
+    return _read_nonempty_lines(PACING_STRATEGIES_FILE, language)
 
 
 class PromptBuilder:
@@ -116,10 +123,28 @@ class PromptBuilder:
     def __init__(self):
         self.pattern_loader = PatternLoader()
         self.banned_phrase_window = BANNED_PHRASE_WINDOW
-        self.reload()
-
         self.current_persona: str | None = None
         self.current_pacing: str | None = None
+        self.current_language: str = AI_LANGUAGE
+        self.reload()
+
+    def set_language(self, language: str) -> None:
+        """Set the language for prompt loading.
+
+        Args:
+            language: Language code (e.g., 'en', 'cs', 'de', 'fr')
+        """
+        from config import get_supported_languages
+        lang = language.lower()
+        supported = get_supported_languages()
+        if lang not in supported:
+            log.warning("Invalid language %r; supported: %s; falling back to %s",
+                       language, supported, self.current_language)
+            return
+        if lang != self.current_language:
+            self.current_language = lang
+            # Force reload prompts from the language-specific directory
+            self.reload()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -214,28 +239,42 @@ class PromptBuilder:
         This includes persona, pacing, and opening pattern — sent once.
         """
         sections: list[str] = []
+        is_czech = self.current_language == "cs"
 
         # A) Session plan (pacing strategy)
         pacing = _pick_or_random(selected_pacing, self._pacing_strategies)
         self.current_pacing = pacing
-        sections.append(
-            f"You MUST use this pacing strategy for this session: {pacing}"
-        )
+        if is_czech:
+            sections.append(f"MUSÍŠ použít tuto pacing strategii pro tuto sezi: {pacing}")
+        else:
+            sections.append(f"You MUST use this pacing strategy for this session: {pacing}")
 
         # B) Persona mood
         mood = _pick_or_random(selected_persona, self._persona_moods)
         self.current_persona = mood
-        sections.append(f"Your dominant affect: {mood}")
+        if is_czech:
+            sections.append(f"Tvůj dominantní afekt: {mood}")
+        else:
+            sections.append(f"Your dominant affect: {mood}")
 
         # C) Opening intent (instead of pattern)
         opening_intent = _pick_or_random(None, self._opening_intents)
-        sections.append(f'Start with intent: "{opening_intent}".')
+        if is_czech:
+            sections.append(f'Začni s intentem: "{opening_intent}".')
+        else:
+            sections.append(f'Start with intent: "{opening_intent}".')
 
         # D) First turn instruction
-        sections.append(
-            "The device is stopped and idle. The User is ready. "
-            "Generate the first 5 outputs and actions."
-        )
+        if is_czech:
+            sections.append(
+                "Zařízení je zastavené a nečinné. Uživatel je připraven. "
+                "Vygeneruj prvních 5 výstupů a akcí."
+            )
+        else:
+                sections.append(
+                    "The device is stopped and idle. The User is ready. "
+                    "Generate the first 5 outputs and actions."
+                )
 
         return "\n\n".join(sections)
 
@@ -253,7 +292,7 @@ class PromptBuilder:
             prompt = prompt.replace("{{PATTERNS_BLOCK}}", pattern_block)
 
         if "{{DEVICE_BLOCK}}" in prompt:
-            device_block = get_device_block(device_type)
+            device_block = get_device_block(device_type, self.current_language)
             prompt = prompt.replace("{{DEVICE_BLOCK}}", device_block)
             log.info(
                 "System prompt built for device %r (%d chars of profile)",
@@ -292,9 +331,8 @@ class PromptBuilder:
 
     # ── File loading ──────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _load_base_prompt() -> str:
-        resolved = resolve_prompt_path(PROMPT_FILE)
+    def _load_base_prompt(self) -> str:
+        resolved = resolve_prompt_path_by_language(PROMPT_FILE, self.current_language)
         if not resolved.exists():
             log.warning("Base prompt file not found: %s", resolved)
             return ""
@@ -302,33 +340,35 @@ class PromptBuilder:
         log.info("Loaded base prompt (%d chars)", len(text))
         return text
 
-    @staticmethod
-    def _load_examples() -> list[str]:
+    def _load_examples(self) -> list[str]:
         examples: list[str] = []
-        if not EXAMPLES_DIR.exists():
-            return examples
+        from config import get_prompt_language_dir
+        lang_examples_dir = get_prompt_language_dir(self.current_language) / "examples" / "big"
+        
+        # Only load from language-specific directory, NOT fall back to English/base
+        # English examples would contaminate non-English prompts
+        if lang_examples_dir.exists():
+            for path in sorted(lang_examples_dir.glob("*.*")):
+                if path.suffix.lower() not in {".txt", ".json"}:
+                    continue
+                try:
+                    resolved = resolve_prompt_path_by_language(path, self.current_language)
+                    examples.append(resolved.read_text(encoding="utf-8"))
+                    log.debug("Loaded example: %s", resolved.name)
+                except OSError as exc:
+                    log.warning("Could not load example %s: %s", path, exc)
 
-        for path in sorted(EXAMPLES_DIR.glob("*.*")):
-            if path.suffix.lower() not in {".txt", ".json"}:
-                continue
-            try:
-                resolved = resolve_prompt_path(path)
-                examples.append(resolved.read_text(encoding="utf-8"))
-                log.debug("Loaded example: %s", resolved.name)
-            except OSError as exc:
-                log.warning("Could not load example %s: %s", path, exc)
-
-        log.info("Loaded %d example file(s)", len(examples))
+        log.info("Loaded %d example file(s) for language %s", len(examples), self.current_language)
         return examples
 
     def reload(self) -> None:
         self._base_prompt = self._load_base_prompt()
         self._examples = self._load_examples()
         self._opening_intents = get_opening_intents()
-        self._persona_moods = get_persona_moods()
-        self._pacing_strategies = get_pacing_strategies()
+        self._persona_moods = get_persona_moods(self.current_language)
+        self._pacing_strategies = get_pacing_strategies(self.current_language)
 
-        self._user_turn_task_template = _read_text_file(USER_TURN_TASK_FILE)
+        self._user_turn_task_template = _read_text_file(USER_TURN_TASK_FILE, self.current_language)
 
 
 def _pick_or_random(selected: str | None, available: list[str]) -> str:

@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 
+
 # ── Paths ────────────────────────────────────────────────────────────────────
 # The app distinguishes two roots:
 #
@@ -49,16 +50,16 @@ TEMPLATES_DIR  = RESOURCE_DIR / "templates"
 STATIC_DIR     = RESOURCE_DIR / "static"
 DEVICE_EMULATOR_SCRIPT = RESOURCE_DIR / "device_emulator.py"
 
-BASE_PROMPTS_DIR = PROMPTS_DIR / "base"
-PROMPT_FILE    = BASE_PROMPTS_DIR / "full_prompt.txt"
+BASE_PROMPTS_DIR = PROMPTS_DIR / "en"
+PROMPT_FILE    = "full_prompt.txt"
 EXAMPLES_DIR   = BASE_PROMPTS_DIR / "examples" / "big"
 
 PROMPT_SEEDS_DIR = BASE_PROMPTS_DIR / "seeds"
-PERSONA_MOODS_FILE = PROMPT_SEEDS_DIR / "persona_moods.txt"
-PACING_STRATEGIES_FILE = PROMPT_SEEDS_DIR / "pacing_strategies.txt"
+PERSONA_MOODS_FILE = "seeds/persona_moods.txt"
+PACING_STRATEGIES_FILE = "seeds/pacing_strategies.txt"
 
 PROMPT_TASKS_DIR = BASE_PROMPTS_DIR / "tasks"
-USER_TURN_TASK_FILE = PROMPT_TASKS_DIR / "user_turn_task.txt"
+USER_TURN_TASK_FILE = "tasks/user_turn_task.txt"
 
 # One instruction block per device type, keyed by devices.registry's type id
 # ("ossm", "coyote", "buttplug", "none").  The base prompt is device-agnostic and
@@ -67,6 +68,61 @@ USER_TURN_TASK_FILE = PROMPT_TASKS_DIR / "user_turn_task.txt"
 # DEVICE_PROMPT_FALLBACK covers any device type without its own file.
 PROMPT_DEVICES_DIR = BASE_PROMPTS_DIR / "devices"
 DEVICE_PROMPT_FALLBACK = "generic"
+
+# ── Jazykové nastavení ────────────────────────────────────────────────────────
+# LANGUAGE - jazyk pro UI a lokalizaci (en, cs)
+# AI_LANGUAGE - jazyk pro AI generaci a prompt soubory (en, cs)
+LANGUAGE       = os.getenv("LANGUAGE", "en")  # en, cs
+AI_LANGUAGE    = os.getenv("AI_LANGUAGE", "en")  # pro AI backend
+
+# Jazykové prompt složky
+PROMPTS_EN_DIR = PROMPTS_DIR / "en"
+PROMPTS_CS_DIR = PROMPTS_DIR / "cs"
+
+
+def get_prompt_language_dir(language: str) -> Path:
+    """Vrací správnou složku promptů podle jazyka.
+    
+    Args:
+        language: jazyk kód (en, cs, atd.)
+    
+    Returns:
+        Path ke složce promptů pro daný jazyk
+    """
+    # Dynamically check if language directory exists
+    lang_dir = PROMPTS_DIR / language
+    if lang_dir.is_dir():
+        return lang_dir
+    # Fallback to English
+    return PROMPTS_EN_DIR
+
+
+def get_supported_languages() -> list[str]:
+    """Scan PROMPTS_DIR for valid language directories.
+
+    A valid language directory:
+    - Is a 2-letter lowercase ISO 639-1 code
+    - Contains at least full_prompt.txt or system_prompt.txt
+
+    Returns:
+        Sorted list of supported language codes
+    """
+    supported = []
+    if not PROMPTS_DIR.is_dir():
+        return supported
+
+    for entry in PROMPTS_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        lang = entry.name
+        # Check for valid ISO 639-1 code (2 lowercase letters)
+        if len(lang) != 2 or not lang.islower() or not lang.isalpha():
+            continue
+        # Check for required prompt files
+        if (entry / "full_prompt.txt").is_file() or (entry / "system_prompt.txt").is_file():
+            supported.append(lang)
+
+    return sorted(supported)
 
 # ── Writable user data (DATA_DIR / APP_CONFIG_DIR) ───────────────────────────
 SETTINGS_FILE  = APP_CONFIG_DIR / "settings.json"
@@ -187,6 +243,17 @@ _BLEND_VOICE = str(BASE_DIR / "RVC" / "voices" / "bella75_nicole25.pt")
 KOKORO_VOICE = os.getenv("KOKORO_VOICE", _BLEND_VOICE if os.path.exists(_BLEND_VOICE) else "af_heart")
 KOKORO_SPEED = float(os.getenv("KOKORO_SPEED", "0.85"))
 KOKORO_DEVICE = os.getenv("KOKORO_DEVICE", "auto")
+
+# ── Piper TTS ──────────────────────────────────────────────────────────────────
+# Piper is a fast, local neural TTS system using ONNX models.
+PIPER_VOICE = os.getenv("PIPER_VOICE", "en_US-lessac-medium")
+PIPER_SPEED = float(os.getenv("PIPER_SPEED", "1.0"))
+PIPER_NOISE_SCALE = float(os.getenv("PIPER_NOISE_SCALE", "0.667"))
+PIPER_NOISE_W = float(os.getenv("PIPER_NOISE_W", "0.8"))
+PIPER_SENTENCE_SILENCE = float(os.getenv("PIPER_SENTENCE_SILENCE", "0.2"))
+
+# Directory where Piper model files (.onnx, .onnx.json) are stored
+PIPER_MODELS_DIR = DATA_DIR / "models" / "piper"
 
 # ── RVC voice conversion (post-Kokoro) ───────────────────────────────────────
 # Applio runs in its own venv (numpy 2.x, faiss, torchcrepe) which conflicts
