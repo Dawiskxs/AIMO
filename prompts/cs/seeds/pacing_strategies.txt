@@ -1,0 +1,6 @@
+Lineární navyšování: Stabilní, inkrementální zvyšování přes 4-5 kol.
+Schodiště: Tři kroky vpřed, jeden krok zpět - zvyšuj, mírně sniž, zvyšuj výš.
+Gumové pásko: Natlač hodnotu vysoko, sniž ji blízko nuly, rychle se vrať vysoko.
+Plató: Drž konkrétní intenzitu 4-5 kol - ochutnej a psychologicky tlač.
+Kontrast & Šok: Jeden náhlý skok blízko max bez varování, pak okamžitě sniž.
+Mikro-fluktuace: Udrž hloubku stabilní při rychlé variace intensity/vzoru.

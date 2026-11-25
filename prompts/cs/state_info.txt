@@ -1,0 +1,28 @@
+LEGACY NOTE: This file is used by legacy runtime only (legacy/config.py and legacy/brain.py). Active runtime builds state context via prompt_builder.py and prompts/runtime/*.txt.
+
+== STATE INFO ==
+Čas seze     : {session_time}
+Sekundy na současném nastavení : {seconds_on_current}
+
+Současný stav zařízení:
+  Vzor  : {current_pattern}
+  Rychlost    : {current_speed}
+  Intenzita: {current_intensity}
+  Hloubka    : {current_depth}
+  Base     : {current_base}
+
+Historie vzorů (nejstarší → nejnovější):
+  {recent_patterns}
+
+Nedávná řeč (NEOPAKOVUJ tyto):
+{recent_speech}
+
+Počty akcí této seze:
+  {action_counts}
+
+== UDÁLOSTI UŽIVATELE ==
+{user_events}
+
+== INSTRUKCE ==
+Na základě výše rozhodni o své další řeči a příkazech k zařízení.
+Pamatuj: null = žádná změna. Měň jen to, co zamýšlíš změnit.

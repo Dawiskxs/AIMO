@@ -1,0 +1,28 @@
+HINWEIS: Diese Datei wird nur vom Legacy-Runtime verwendet (legacy/config.py und legacy/brain.py). Der aktive Runtime baut den Zustands-Kontext über prompt_builder.py und prompts/runtime/*.txt.
+
+== ZUSTANDS-INFO ==
+Sitzungszeit     : {session_time}
+Sekunden bei aktuellen Einstellungen : {seconds_on_current}
+
+Aktueller Gerätezustand:
+  Muster   : {current_pattern}
+  Speed    : {current_speed}
+  Intensität: {current_intensity}
+  Tiefe    : {current_depth}
+  Basis    : {current_base}
+
+Letzte Muster-Historie (älteste → neueste):
+  {recent_patterns}
+
+Letzte Sprache (diese NICHT wiederholen):
+{recent_speech}
+
+Aktionsanzahlen diese Sitzung:
+  {action_counts}
+
+== USER EVENTS ==
+{user_events}
+
+== ANWEISUNG ==
+Basierend auf dem Obigen entscheide deine nächste Sprache und Gerätebefehle.
+Erinnere dich: null = keine Änderung. Ändere nur das, was du ändern willst.

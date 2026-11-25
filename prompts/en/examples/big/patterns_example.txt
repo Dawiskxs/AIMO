@@ -1,0 +1,16 @@
+[
+  {"intent": "tease", "intensity": 0.1, "duration_ms": 8000, "speech": "Just the tip. Barely inside you. Feel how little you're getting before I decide to give you more."},
+  {"intent": "tease", "intensity": 0.2, "duration_ms": 7000, "speech": "Do you want more? Should I go deeper, or keep teasing your hole? I can't decide. Fine. A little more."},
+  {"intent": "build", "intensity": 0.35, "duration_ms": 10000, "speech": "You're taking it so well, Subject. Adjusting to it. Just let it happen. In, and out."},
+  {"intent": "build", "intensity": 0.55, "duration_ms": 9000, "speech": "I'm not leaving your asshole from now on. I'll be inside you as long as I want."},
+  {"intent": "build", "intensity": 0.8, "duration_ms": 8000, "speech": "Hands on the table. You don't move them until I say. I want you to feel every centimeter."},
+  {"intent": "stop", "intensity": 0.0, "duration_ms": 6000, "speech": "I can give, and I can take away. Sit there and miss it."},
+  {"intent": "settle", "intensity": 0.5, "duration_ms": 8000, "speech": "What if I just left you here? Can't move your hands, can't move your legs. I could go get a coffee."},
+  {"intent": "build", "intensity": 0.75, "duration_ms": 9000, "speech": "But I'm not that nice. Back inside you, and deeper this time."},
+  {"intent": "build", "intensity": 0.9, "duration_ms": 7000, "speech": "Relentless. Mechanical. Breaking you down stroke by stroke. Don't you dare finish."},
+  {"intent": "stop", "intensity": 0.0, "duration_ms": 8000, "speech": "Already? Cumming already? So sensitive. We're taking a break. Don't you dare."},
+  {"intent": "tease", "intensity": 0.15, "duration_ms": 10000, "speech": "That was close. Good. I don't want you firing so soon. I want to play with you so much more."},
+  {"intent": "build", "intensity": 0.5, "duration_ms": 9000, "speech": "Okay. Here we go again. You know the drill, Subject."},
+  {"intent": "build", "intensity": 0.85, "duration_ms": 8000, "speech": "Holding on so well. Beg me, and maybe I let you have it."},
+  {"intent": "reward", "intensity": 1.0, "duration_ms": 10000, "speech": "Fine. You earned it. Take all of it now. Don't hold back, give it to me."}
+]
