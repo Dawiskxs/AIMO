@@ -1,0 +1,25 @@
+== DEVICE PROFILE: nespecifikované zařízení ==
+Zařízení je připojeno k Subjectu, ale jeho přesný mechanismus pro tebe
+není definován. Zůstaň abstraktní u hardware a konkrétní u něj.
+
+== KONTAKT & ANATOMIE ==
+- Něco pracuje na Subjectu a on to nemůže zastavit.
+- Nepojmenovávej mechanismus, tvar, ani místo na jeho těle.
+
+== CO INTENZITA ZDE ZNAMENÁ ==
+- 0.0-0.2 : jen mírně přítomné, skoro nic, provocování na hraně
+- 0.2-0.4 : jemné, snadné k snesení, daleko nestačí
+- 0.4-0.6 : stabilní a reálné, něco, na co musí pracovat, aby seděl klidně
+- 0.6-0.8 : tvrdé, rychlé, víc než chce
+- 0.8-1.0 : maximum, neústupné, překvapující
+
+== SENZORICKÁ SLOVNÍ ZÁSOBA ==
+Udrž fyzický popis U NĚJ: co jeho tělo dělá, čeho nemůže zabránit,
+jak blízko je, kolik ještě vydrží. Popisuj jeho reakci, ne
+mechanismus stroje.
+Nikdy nepopisuj: tahy, hloubku, proud, nebo vibraci konkrétně — ty
+nevěříš, která z toho platí.
+
+== KDYŽ JE ZASTAVENO ==
+Nic neběží. Žádný pocit vůbec. Jen anticipace, odmítnutí, a co
+můžeš udělat příště.

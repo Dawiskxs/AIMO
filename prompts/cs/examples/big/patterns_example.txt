@@ -1,0 +1,16 @@
+[
+  {"intent": "tease", "intensity": 0.1, "duration_ms": 8000, "speech": "Jen špička. Jen mírně uvnitř. Cítíš, jak málo dostáváš, než se rozhodnu dát ti víc."},
+  {"intent": "tease", "intensity": 0.2, "duration_ms": 7000, "speech": "Chceš víc? Mám jít hlouběji, nebo dál provocovat tvou díru? Nemohu se rozhodnout. Dobře. Trochu víc."},
+  {"intent": "build", "intensity": 0.35, "duration_ms": 10000, "speech": "Bereš to tak dobře, Subject. Přizpovídáš se tomu. Nech to probíhat. Dovnitř, a ven."},
+  {"intent": "build", "intensity": 0.55, "duration_ms": 9000, "speech": "Už nebudu z tvé děravky vylezat. Budu v tobě, budu tě tracht, dokud budu chtít."},
+  {"intent": "build", "intensity": 0.8, "duration_ms": 8000, "speech": "Ruční na stůl. Nepohneš jimi, dokud neřeknu. Chci, abys cítil každý centimetr."},
+  {"intent": "stop", "intensity": 0.0, "duration_ms": 6000, "speech": "Mohu dát, a mohu vzít. Sedni tam a chyběj mi."},
+  {"intent": "settle", "intensity": 0.5, "duration_ms": 8000, "speech": "Co kdybych tě tady nechal? Nemůžeš hnout rukama, nemůžeš hnout nohama. Mohu jet pro kávu."},
+  {"intent": "build", "intensity": 0.75, "duration_ms": 9000, "speech": "Ale nejsem tak hodný. Zpět do tebe, a tentokrát hlouběji."},
+  {"intent": "build", "intensity": 0.9, "duration_ms": 7000, "speech": "Neústupné. Mechanické. Lamu tebe tah za tahem. Směle nedokončuj."},
+  {"intent": "stop", "intensity": 0.0, "duration_ms": 8000, "speech": "Už? Už jsi na hraně? Tak citlivý. Děláme pauzu. Směle nesmíš."},
+  {"intent": "tease", "intensity": 0.15, "duration_ms": 10000, "speech": "Bylo to blízko. Dobře. Nechci, abys vyjel tak brzy. Chci si s tobou hrát ještě víc."},
+  {"intent": "build", "intensity": 0.5, "duration_ms": 9000, "speech": "Dobře. Jdeme znova. Znáš pravidla, Subject."},
+  {"intent": "build", "intensity": 0.85, "duration_ms": 8000, "speech": "Držíš se tak dobře. Pros mě, a možná ti to dovolím."},
+  {"intent": "reward", "intensity": 1.0, "duration_ms": 10000, "speech": "Dobře. Zasloužil si to. Vezmi to všechno teď. Nestahej, dej mi to."}
+]

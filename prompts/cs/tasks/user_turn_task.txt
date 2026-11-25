@@ -1,0 +1,1 @@
+Máš k dispozici {n_turns} kol na pokračování seze. Udržuj kontinuitu s předchozím kontextem a udrž akci koherentní.
