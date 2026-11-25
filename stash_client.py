@@ -30,7 +30,7 @@ import socket
 import threading
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ _HTTP_TIMEOUT = 15.0
 
 # ── SOCKS5 proxy support (stdlib only) ─────────────────────────────────────────
 
-def parse_proxy_address(address: str) -> Optional[tuple[str, int]]:
+def parse_proxy_address(address: str) -> tuple[str, int] | None:
     """Parse a ``host:port`` proxy address into ``(host, port)`` or None."""
     address = (address or "").strip()
     if not address:
@@ -160,7 +160,7 @@ class _Socks5HTTPSHandler(urllib.request.HTTPSHandler):
         )
 
 
-def _build_opener(proxy: Optional[tuple[str, int]]) -> urllib.request.OpenerDirector:
+def _build_opener(proxy: tuple[str, int] | None) -> urllib.request.OpenerDirector:
     """Build a urllib opener that tunnels through ``proxy`` when set."""
     if proxy is None:
         return urllib.request.build_opener()
@@ -201,7 +201,7 @@ class StashClient:
 
     # ── HTTP helpers ─────────────────────────────────────────────────────────
 
-    def _headers(self, extra: Optional[dict] = None) -> dict[str, str]:
+    def _headers(self, extra: dict | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["ApiKey"] = self.api_key
@@ -227,7 +227,7 @@ class StashClient:
 
     # ── Scene queries ────────────────────────────────────────────────────────
 
-    def _resolve_tag_id(self, name: str) -> Optional[str]:
+    def _resolve_tag_id(self, name: str) -> str | None:
         query = """
         query($name: String!) {
           findTags(tag_filter: {name: {value: $name, modifier: EQUALS}}) {
@@ -297,13 +297,13 @@ class StashClient:
             return cached
         return self.refresh_scenes()
 
-    def get_scene(self, scene_id: str) -> Optional[dict]:
+    def get_scene(self, scene_id: str) -> dict | None:
         for scene in self.get_scenes():
             if scene["id"] == str(scene_id):
                 return scene
         return None
 
-    def pick_random_scene(self, prefer_interactive: bool = True) -> Optional[dict]:
+    def pick_random_scene(self, prefer_interactive: bool = True) -> dict | None:
         """Pick a random tagged scene, preferring ones that carry a funscript."""
         scenes = self.get_scenes()
         if not scenes:
@@ -332,7 +332,7 @@ class StashClient:
         with self._opener.open(req, timeout=_HTTP_TIMEOUT) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def open_stream(self, scene_id: str, range_header: Optional[str] = None):
+    def open_stream(self, scene_id: str, range_header: str | None = None):
         """
         Open the upstream video stream for proxying.
 

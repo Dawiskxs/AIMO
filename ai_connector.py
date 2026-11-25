@@ -12,10 +12,10 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-import google.genai as genai
+from google import genai
 
 from config import (
     GENERATION_OPTIONS,
@@ -172,7 +172,7 @@ class BaseAIConnector:
     def _mark_healthy(self) -> None:
         self._last_api_ok = True
         self._last_api_message = "Connected"
-        self._last_api_checked_at = datetime.now(timezone.utc).isoformat()
+        self._last_api_checked_at = datetime.now(UTC).isoformat()
 
     def _mark_unhealthy(self, exc: Exception) -> None:
         self._last_api_ok = False
@@ -180,12 +180,12 @@ class BaseAIConnector:
         # the server running", the list of models actually installed) to survive
         # intact -- at 100 they were being cut mid-sentence.
         self._last_api_message = str(exc)[:300]
-        self._last_api_checked_at = datetime.now(timezone.utc).isoformat()
+        self._last_api_checked_at = datetime.now(UTC).isoformat()
 
     def _write_response_log(self, log_data: dict[str, Any]) -> None:
         try:
             self.response_log_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%fZ")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%fZ")
             log_file = self.response_log_dir / f"response_{timestamp}.json"
 
             with log_file.open("w", encoding="utf-8") as handle:

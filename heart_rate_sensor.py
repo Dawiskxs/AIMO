@@ -1,13 +1,13 @@
 import asyncio
-import time
+import json
 import math
 import random
-import json
-import threading
-from datetime import datetime
+import time
 from collections import deque
+from datetime import datetime
+
+from bleak import BleakClient, BleakScanner
 from pynput import keyboard
-from bleak import BleakScanner, BleakClient
 
 # Standard Bluetooth SIG UUIDs for Heart Rate
 HR_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb"
@@ -221,7 +221,7 @@ class EdgeDetector:
             user_lag = now - self.space_press_time
 
         print("\n" + "=" * 50)
-        print(f"🚨 EDGE DETECTED! STOPPING! 🚨")
+        print("🚨 EDGE DETECTED! STOPPING! 🚨")
         print(f"Reason: {reason}")
         print(f"Floor: {self.baseline_bpm:.1f} BPM | Current: {current_bpm:.1f} BPM")
         print(f"Arousal: {self.arousal:.1f} | RMSSD: {rmssd_str}")
@@ -261,18 +261,14 @@ class EdgeDetector:
             if rmssd is not None:
                 self.hrv_history.append(rmssd)
 
-            if bpm > self.baseline_bpm + self.cfg["building_entry_bpm"]:
-                self._enter_state("BUILDING")
-                self.dropoff_start = None
-            elif self.arousal > 50.0:
+            if bpm > self.baseline_bpm + self.cfg["building_entry_bpm"] or self.arousal > 50.0:
                 self._enter_state("BUILDING")
                 self.dropoff_start = None
 
         # ---------------- BUILDING ----------------
         elif self.state == "BUILDING":
             # Track the peak BPM reached this build phase
-            if bpm > self.building_peak_bpm:
-                self.building_peak_bpm = bpm
+            self.building_peak_bpm = max(self.building_peak_bpm, bpm)
 
             # Dropoff detection
             if bpm <= self.baseline_bpm + self.cfg["floor_margin_bpm"]:
@@ -309,7 +305,7 @@ class EdgeDetector:
             if time_in_building > required_time:
                 # Descent veto: if BPM is descending when we try to arm, edge already passed
                 if self._is_descending():
-                    print(f"  ⬇️ Descent veto: edge likely already passed")
+                    print("  ⬇️ Descent veto: edge likely already passed")
                     self._enter_state("IDLE")
                     return
 
@@ -368,7 +364,7 @@ class EdgeDetector:
             if bpm <= self.baseline_bpm + self.cfg["floor_margin_bpm"]:
                 if self.cooldown_start is None:
                     self.cooldown_start = now
-                    print(f"  Calming... cooldown started")
+                    print("  Calming... cooldown started")
 
                 elapsed = now - self.cooldown_start
                 total_needed = self.cfg["cooldown_seconds"] + self.random_additional_delay
@@ -544,7 +540,7 @@ async def run():
 
     try:
         async with BleakClient(device) as client:
-            print(f"Connected! Establishing baseline...\n")
+            print("Connected! Establishing baseline...\n")
 
             await client.start_notify(HR_MEASUREMENT_UUID, notification_handler)
 
@@ -563,7 +559,7 @@ async def run():
 if __name__ == "__main__":
     try:
         asyncio.run(run())
-    except Exception as e:
+    except Exception:
         detector.close()
         keyboard_listener.stop()
         raise

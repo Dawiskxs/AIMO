@@ -695,6 +695,29 @@ input[type="range"] {
   gap: 12px;
 }
 
+/* Piper-specific grid: smaller minimum column width to prevent overlap */
+#settings-piper-fields.settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+/* Input group for select + button combos */
+.settings-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-input-group select {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-input-group button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* Enable/disable toggle pinned at the top of a category */
 .settings-field.settings-toggle {
   flex-direction: row;

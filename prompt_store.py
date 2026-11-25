@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config import BASE_PROMPTS_DIR, CURRENT_PROMPTS_DIR
+from config import (
+    AI_LANGUAGE,
+    BASE_PROMPTS_DIR,
+    CURRENT_PROMPTS_DIR,
+    get_prompt_language_dir,
+)
 
 
 def _normalize_relative_path(path: str | Path) -> Path:
@@ -35,6 +40,36 @@ def resolve_prompt_path(path: str | Path) -> Path:
     return base
 
 
+def resolve_prompt_path_by_language(path: str | Path, language: str | None = None) -> Path:
+    """Resolve prompt path from language-specific directory or base.
+    
+    Priority:
+    1. Current overlay (DATA_DIR/prompts/current/{language}/...)
+    2. Language-specific base (prompts/{lang}/...)
+    3. Default base (prompts/base/...)
+    
+    Args:
+        path: Relativní cesta k prompt souboru
+        language: jazyk (en, cs), vypustí AI_LANGUAGE pokud None
+    """
+    if language is None:
+        language = AI_LANGUAGE
+    
+    # Nejprve zkusit current overlay pro daný jazyk
+    language_current = CURRENT_PROMPTS_DIR / language / path
+    if language_current.exists():
+        return language_current
+    
+    # Pak language-specific base
+    language_dir = get_prompt_language_dir(language)
+    language_base = language_dir / path
+    if language_base.exists():
+        return language_base
+    
+    # Nakonec fallback na default base
+    return base_path(path)
+
+
 def prompt_exists_in_base(path: str | Path) -> bool:
     return base_path(path).exists()
 
@@ -46,6 +81,24 @@ def list_base_prompt_names() -> list[str]:
     for file_path in sorted(BASE_PROMPTS_DIR.rglob("*")):
         if file_path.is_file():
             names.append(file_path.relative_to(BASE_PROMPTS_DIR).as_posix())
+    return names
+
+
+def list_prompt_names_by_language(language: str) -> list[str]:
+    """List prompt names for a specific language directory.
+    
+    Falls back to base directory if language-specific directory doesn't exist.
+    """
+    from config import get_prompt_language_dir
+    
+    lang_dir = get_prompt_language_dir(language)
+    if not lang_dir.exists():
+        return list_base_prompt_names()
+    
+    names: list[str] = []
+    for file_path in sorted(lang_dir.rglob("*")):
+        if file_path.is_file():
+            names.append(file_path.relative_to(lang_dir).as_posix())
     return names
 
 

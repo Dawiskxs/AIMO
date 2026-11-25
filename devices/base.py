@@ -6,8 +6,9 @@ Abstract base class for all physical devices.
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class DeviceState:
     emergency_stopped: bool = False
     device_type: str = "unknown"
     # Subclasses add fields via extra dict
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -35,12 +36,12 @@ class AbstractDevice(ABC):
 
     def __init__(self):
         self._state = DeviceState(device_type=self.device_type)
-        self._listeners: List[Callable[[dict], None]] = []
+        self._listeners: list[Callable[[dict], None]] = []
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @abstractmethod
-    def connect(self, address: Optional[str] = None) -> bool:
+    def connect(self, address: str | None = None) -> bool:
         """Connect to the device. Returns True on success."""
         ...
 
@@ -52,7 +53,7 @@ class AbstractDevice(ABC):
     # ── Commands ─────────────────────────────────────────────────────────────
 
     @abstractmethod
-    def send_command(self, command: Dict[str, Any]) -> None:
+    def send_command(self, command: dict[str, Any]) -> None:
         """Send a command dict to the device. Never blocks caller."""
         ...
 
@@ -61,7 +62,7 @@ class AbstractDevice(ABC):
         """Immediate emergency stop. Must be synchronous and fast."""
         ...
 
-    def apply_ai_commands(self, commands: Dict[str, Any]) -> None:
+    def apply_ai_commands(self, commands: dict[str, Any]) -> None:
         """Apply a compiled intent from the orchestrator.
 
         `commands` carries {pattern, speed, depth, base, intensity, commands},

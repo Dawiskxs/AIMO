@@ -18,7 +18,7 @@ Each JSON defines one intensity band with parameters and optional variations.
 import json
 import logging
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 

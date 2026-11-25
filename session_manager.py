@@ -12,10 +12,10 @@ the to_dict / from_dict methods.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from response_parser import Turn, Commands
+from response_parser import Commands, Turn
 
 log = logging.getLogger(__name__)
 

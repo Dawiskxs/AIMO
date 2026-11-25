@@ -13,9 +13,9 @@ Two layers:
 """
 
 import pytest
+from fake_bleak import FakeBleakClient, FakeBleakScanner, install, wait_for
 
 from devices.ossm_ble import (
-    COMMAND_CHAR,
     SERVICE_UUID,
     SPEED_KNOB_CHAR,
     OSSMBleDevice,
@@ -24,7 +24,6 @@ from devices.ossm_ble import (
     sensation_from_wire,
     sensation_to_wire,
 )
-from fake_bleak import FakeBleakClient, FakeBleakScanner, install, wait_for
 
 ADDRESS = "AA:BB:CC:DD:EE:FF"
 

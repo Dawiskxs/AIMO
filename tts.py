@@ -1,7 +1,7 @@
 """
 tts.py
 ----
-Local Kokoro TTS integration with word-level timestamp extraction.
+Multi-backend TTS integration (Kokoro + Piper) with word-level timestamp extraction.
 
 When the orchestrator gets a turn from the AI, it passes the speech text
 through synthesize().  The function returns:
@@ -22,41 +22,114 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-# numpy / soundfile / kokoro are imported lazily inside synthesize() so the
+import numpy as np
+
+# numpy / soundfile / kokoro / piper are imported lazily inside synthesize() so the
 # module (and its cache/config helpers) import cleanly in builds that ship
 # without the optional TTS dependencies.  See requirements-tts.txt.
 
 log = logging.getLogger(__name__)
 
 # -- Configuration -----------------------------------------------------------
-SAMPLE_RATE = 24_000
+# Kokoro defaults
+KOKORO_SAMPLE_RATE = 24_000
 
 # Defaults come from config so that direct synthesize() calls and the
-# settings-driven path agree.  config already applies the KOKORO_* env
+# settings-driven path agree.  config already applies the *_* env
 # overrides; duplicating os.getenv() here would silently diverge from it.
 try:
     import config as _config
-    VOICE = _config.KOKORO_VOICE
+    KOKORO_VOICE = _config.KOKORO_VOICE
     KOKORO_SPEED = _config.KOKORO_SPEED
-    DEVICE = _config.KOKORO_DEVICE
+    KOKORO_DEVICE = _config.KOKORO_DEVICE
+    PIPER_VOICE = _config.PIPER_VOICE
+    PIPER_SPEED = _config.PIPER_SPEED
+    PIPER_NOISE_SCALE = _config.PIPER_NOISE_SCALE
+    PIPER_NOISE_W = _config.PIPER_NOISE_W
+    PIPER_SENTENCE_SILENCE = _config.PIPER_SENTENCE_SILENCE
+    PIPER_MODELS_DIR = _config.PIPER_MODELS_DIR
 except Exception:  # noqa: BLE001 - keep tts.py importable standalone
-    VOICE = os.getenv("KOKORO_VOICE", "af_heart")
+    KOKORO_VOICE = os.getenv("KOKORO_VOICE", "af_heart")
     KOKORO_SPEED = float(os.getenv("KOKORO_SPEED", "1.0"))
-    DEVICE = os.getenv("KOKORO_DEVICE", "auto")  # auto | cpu | cuda
+    KOKORO_DEVICE = os.getenv("KOKORO_DEVICE", "auto")  # auto | cpu | cuda
+    PIPER_VOICE = os.getenv("PIPER_VOICE", "en_US-lessac-medium")
+    PIPER_SPEED = float(os.getenv("PIPER_SPEED", "1.0"))
+    PIPER_NOISE_SCALE = float(os.getenv("PIPER_NOISE_SCALE", "0.667"))
+    PIPER_NOISE_W = float(os.getenv("PIPER_NOISE_W", "0.8"))
+    PIPER_SENTENCE_SILENCE = float(os.getenv("PIPER_SENTENCE_SILENCE", "0.0"))
+    PIPER_MODELS_DIR = Path(os.getenv("AIMEE_DATA_DIR", str(Path.home() / ".config" / "aimee"))) / "models" / "piper"
 
 AUDIO_CACHE_DIR = Path(tempfile.gettempdir()) / "aimee_tts"
 
-# Lazy-import Kokoro so the app can start even if the package is not installed.
-_pipeline = None
-_pipeline_device: str | None = None
+# Backend selection
+TTS_BACKEND = "kokoro"  # "kokoro" | "piper"
+
+# Language-specific voice mappings
+KOKORO_VOICES = {
+    "en": "af_heart",
+    "cs": "cf_czech",  # Czech voice for Kokoro (if available)
+}
+
+PIPER_VOICES = {
+    "en": "en_US-lessac-medium",
+    "cs": "cs_CZ-jirka-medium",  # Czech voice for Piper
+}
 
 
-def configure(voice: str | None = None, speed: float | None = None,
-              device: str | None = None) -> None:
+def _detect_language(text: str) -> str:
+    """Simple language detection based on character patterns."""
+    # Czech-specific characters
+    czech_chars = set('ěščřžýáíéúůťďňóĚŠČŘŽÝÁÍÉÚŮŤĎŇÓ')
+    if any(c in czech_chars for c in text):
+        return "cs"
+    # Common Czech words
+    czech_words = {'je', 'to', 'a', 'v', 'z', 'na', 'pro', 's', 'o', 'jako', 'tak', 'že', 'by', 'si', 'mi', 'ti', 'ho', 'mu', 'jeho', 'její', 'jejich', 'my', 'vy', 'oni', 'jsem', 'jsi', 'jsme', 'jste', 'jsou', 'byl', 'byla', 'bylo', 'byli', 'mám', 'máš', 'má', 'máme', 'máte', 'mají', 'dělá', 'děláš', 'děláme', 'dělají', 'půjde', 'půjdu', 'půjdeš', 'chci', 'chceš', 'chce', 'chceme', 'chcete', 'chtějí'}
+    words = set(text.lower().split())
+    if words & czech_words:
+        return "cs"
+    return "en"
+
+
+def _select_voice_for_language(language: str) -> str:
+    """Select appropriate voice for the given language and current backend."""
+    if TTS_BACKEND == "piper":
+        return PIPER_VOICES.get(language, PIPER_VOICES["en"])
+    else:
+        return KOKORO_VOICES.get(language, KOKORO_VOICES["en"])
+
+# Lazy-import pipelines so the app can start even if packages are not installed.
+_kokoro_pipeline = None
+_kokoro_pipeline_device: str | None = None
+_piper_voice = None
+_piper_voice_name: str | None = None
+
+
+def configure(
+    voice: str | None = None,
+    speed: float | None = None,
+    device: str | None = None,
+    backend: str | None = None,
+    # Piper-specific
+    piper_voice: str | None = None,
+    piper_speed: float | None = None,
+    piper_noise_scale: float | None = None,
+    piper_noise_w: float | None = None,
+    piper_sentence_silence: float | None = None,
+) -> None:
     """Update default voice/speed/device from settings (live)."""
-    global VOICE, KOKORO_SPEED, DEVICE, _pipeline, _pipeline_device
+    global KOKORO_VOICE, KOKORO_SPEED, KOKORO_DEVICE, _kokoro_pipeline, _kokoro_pipeline_device
+    global TTS_BACKEND, PIPER_VOICE, PIPER_SPEED, PIPER_NOISE_SCALE, PIPER_NOISE_W, PIPER_SENTENCE_SILENCE
+    global _piper_voice, _piper_voice_name
+
+    # Backend switch
+    if backend:
+        new_backend = str(backend).lower()
+        if new_backend in ("kokoro", "piper") and new_backend != TTS_BACKEND:
+            TTS_BACKEND = new_backend
+
+    # Kokoro settings
     if voice:
-        VOICE = str(voice)
+        KOKORO_VOICE = str(voice)
     if speed is not None:
         try:
             KOKORO_SPEED = float(speed)
@@ -64,47 +137,107 @@ def configure(voice: str | None = None, speed: float | None = None,
             pass
     if device:
         new_device = str(device).lower()
-        if new_device != DEVICE:
-            DEVICE = new_device
-            # Rebuild only if this actually moves the model.  The saved setting
-            # is a *request* ("auto"/"cpu"/"cuda") and several of them resolve
-            # to the same device -- "auto" is "cuda" on a CUDA box.  Comparing
-            # the requests rather than the resolved devices would tear down the
-            # prewarmed pipeline on the first session start and pay its ~20s
-            # load again, inside the request the prewarm exists to keep fast.
-            if _pipeline_device is not None and _resolve_device() != _pipeline_device:
-                _pipeline = None
-                _pipeline_device = None
+        if new_device != KOKORO_DEVICE:
+            KOKORO_DEVICE = new_device
+            if _kokoro_pipeline_device is not None and _resolve_kokoro_device() != _kokoro_pipeline_device:
+                _kokoro_pipeline = None
+                _kokoro_pipeline_device = None
+
+    # Piper settings
+    if piper_voice:
+        new_voice = str(piper_voice)
+        if new_voice != PIPER_VOICE:
+            PIPER_VOICE = new_voice
+            _piper_voice = None
+            _piper_voice_name = None
+    if piper_speed is not None:
+        try:
+            PIPER_SPEED = float(piper_speed)
+        except (TypeError, ValueError):
+            pass
+    if piper_noise_scale is not None:
+        try:
+            PIPER_NOISE_SCALE = float(piper_noise_scale)
+        except (TypeError, ValueError):
+            pass
+    if piper_noise_w is not None:
+        try:
+            PIPER_NOISE_W = float(piper_noise_w)
+        except (TypeError, ValueError):
+            pass
+    if piper_sentence_silence is not None:
+        try:
+            PIPER_SENTENCE_SILENCE = float(piper_sentence_silence)
+        except (TypeError, ValueError):
+            pass
 
 
-def _resolve_device() -> str:
-    if DEVICE == "cpu":
+def _resolve_kokoro_device() -> str:
+    if KOKORO_DEVICE == "cpu":
         return "cpu"
-    if DEVICE == "cuda":
+    if KOKORO_DEVICE == "cuda":
         return "cuda"
     return "cuda" if _cuda_available() else "cpu"
 
 
-def _get_pipeline():
+def _get_kokoro_pipeline(language: str = "en"):
     """Lazy initialiser for the Kokoro KPipeline."""
-    global _pipeline, _pipeline_device
-    if _pipeline is not None:
-        return _pipeline
+    global _kokoro_pipeline, _kokoro_pipeline_device
+    if _kokoro_pipeline is not None:
+        return _kokoro_pipeline
 
     try:
         from kokoro import KPipeline
     except ImportError as exc:
         raise RuntimeError(
-            "Text-to-speech is not installed. It is not bundled in the prebuilt "
-            "binary; run from source and install the TTS extras with: "
+            "Kokoro TTS is not installed. Install TTS extras with: "
             "pip install -r requirements-tts.txt"
         ) from exc
 
-    device = _resolve_device()
-    _pipeline = KPipeline(lang_code="a", device=device)
-    _pipeline_device = device
-    log.info("Kokoro pipeline initialised on %s (voice=%s)", device, VOICE)
-    return _pipeline
+    device = _resolve_kokoro_device()
+    # Map language to Kokoro lang_code
+    lang_code_map = {
+        "en": "a",      # American English
+        "cs": "c",      # Czech (if supported)
+    }
+    lang_code = lang_code_map.get(language, "a")
+    _kokoro_pipeline = KPipeline(lang_code=lang_code, device=device)
+    _kokoro_pipeline_device = device
+    log.info("Kokoro pipeline initialised on %s (voice=%s, lang_code=%s)", device, KOKORO_VOICE, lang_code)
+    return _kokoro_pipeline
+
+
+def _get_piper_voice():
+    """Lazy initialiser for Piper voice."""
+    global _piper_voice, _piper_voice_name
+    if _piper_voice is not None and _piper_voice_name == PIPER_VOICE:
+        return _piper_voice
+
+    try:
+        from piper.voice import PiperVoice
+    except ImportError as exc:
+        raise RuntimeError(
+            "Piper TTS is not installed. Install TTS extras with: "
+            "pip install -r requirements-tts.txt"
+        ) from exc
+
+    model_path = PIPER_MODELS_DIR / f"{PIPER_VOICE}.onnx"
+    config_path = PIPER_MODELS_DIR / f"{PIPER_VOICE}.onnx.json"
+
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Piper model not found: {model_path}. "
+            f"Download voice models to {PIPER_MODELS_DIR}/"
+        )
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Piper config not found: {config_path}"
+        )
+
+    _piper_voice = PiperVoice.load(str(model_path), str(config_path))
+    _piper_voice_name = PIPER_VOICE
+    log.info("Piper voice loaded: %s (sample_rate=%d)", PIPER_VOICE, _piper_voice.config.sample_rate)
+    return _piper_voice
 
 
 def _cuda_available() -> bool:
@@ -157,7 +290,7 @@ def _sentence_gaps(results, speed: float) -> list[int]:
             ms = _GAP_MS.get(graphemes[-1], _DEFAULT_GAP_MS)
         else:
             ms = _DEFAULT_GAP_MS
-        gaps.append(round(SAMPLE_RATE * ms / 1000 / max(speed, 0.1)))
+        gaps.append(round(KOKORO_SAMPLE_RATE * ms / 1000 / max(speed, 0.1)))
 
     if gaps:
         gaps[-1] = 0
@@ -166,9 +299,9 @@ def _sentence_gaps(results, speed: float) -> list[int]:
 
 # -- Public API --------------------------------------------------------------
 
-def synthesize(text: str, voice: str | None = None, speed: float | None = None) -> dict[str, Any]:
+def synthesize(text: str, voice: str | None = None, speed: float | None = None, language: str | None = None) -> dict[str, Any]:
     """
-    Convert *text* to speech using local Kokoro.
+    Convert *text* to speech using selected backend (Kokoro or Piper).
 
     Returns a dict with keys:
         audio_url   -- relative URL the frontend can fetch (/api/tts/audio/<id>)
@@ -183,12 +316,33 @@ def synthesize(text: str, voice: str | None = None, speed: float | None = None) 
         return {"audio_url": None, "audio_path": None, "words": [],
                 "visemes": [], "duration_ms": 0}
 
-    voice = voice or VOICE
+    # Auto-detect language if not provided
+    if language is None:
+        language = _detect_language(text)
+
+    # Auto-select voice based on language if not explicitly provided
+    if voice is None:
+        voice = _select_voice_for_language(language)
+
+    # Dispatch to backend
+    if TTS_BACKEND == "piper":
+        return _synthesize_piper(text, voice, speed)
+    else:
+        return _synthesize_kokoro(text, voice, speed)
+
+
+def _synthesize_kokoro(text: str, voice: str | None = None, speed: float | None = None, language: str = "en") -> dict[str, Any]:
+    """Synthesize using Kokoro backend."""
+    if not text or not text.strip():
+        return {"audio_url": None, "audio_path": None, "words": [],
+                "visemes": [], "duration_ms": 0}
+
+    voice = voice or KOKORO_VOICE
     speed = speed if speed is not None else KOKORO_SPEED
 
     # Build a deterministic cache key so repeated identical sentences
-    # do not re-synthesise.
-    cache_key = _make_cache_key(text, voice, speed)
+    # do not re-synthesise. Include backend in key.
+    cache_key = _make_cache_key(text, voice, speed, "kokoro")
     cache_path = AUDIO_CACHE_DIR / f"{cache_key}.wav"
     cache_meta = AUDIO_CACHE_DIR / f"{cache_key}.json"
 
@@ -203,7 +357,7 @@ def synthesize(text: str, voice: str | None = None, speed: float | None = None) 
     # -- Synthesis --------------------------------------------------------
     import numpy as np
 
-    pipeline = _get_pipeline()
+    pipeline = _get_kokoro_pipeline(language)
     results = list(pipeline(text, voice=voice, speed=speed,
                             split_pattern=_SPLIT_PATTERN))
 
@@ -234,12 +388,12 @@ def synthesize(text: str, voice: str | None = None, speed: float | None = None) 
         raise RuntimeError("soundfile is required for TTS output.  pip install soundfile") from exc
 
     AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    sf.write(str(cache_path), audio, SAMPLE_RATE)
+    sf.write(str(cache_path), audio, KOKORO_SAMPLE_RATE)
 
     # -- Extract word timings from Kokoro tokens --------------------------
     words = _extract_word_timings(results, gaps)
     visemes = _build_visemes(words)
-    duration_ms = round(len(audio) / SAMPLE_RATE * 1000)
+    duration_ms = round(len(audio) / KOKORO_SAMPLE_RATE * 1000)
 
     # Per-phoneme durations have done their job building the track above; the
     # frontend only highlights whole words, so keep them out of the payload.
@@ -289,8 +443,121 @@ def synthesize(text: str, voice: str | None = None, speed: float | None = None) 
     with cache_meta.open("w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=2)
 
-    log.info("TTS generated %d words, %d ms audio", len(words), duration_ms)
+    log.info("Kokoro TTS generated %d words, %d ms audio", len(words), duration_ms)
     return meta
+
+
+def _synthesize_piper(text: str, voice: str | None = None, speed: float | None = None, language: str = "en") -> dict[str, Any]:
+    """Synthesize using Piper backend."""
+    if not text or not text.strip():
+        return {"audio_url": None, "audio_path": None, "words": [],
+                "visemes": [], "duration_ms": 0}
+
+    # For Piper, voice parameter is the model name, speed is length_scale
+    piper_voice_name = voice or PIPER_VOICE
+    length_scale = speed if speed is not None else PIPER_SPEED
+
+    # Build a deterministic cache key including backend and Piper-specific params
+    import hashlib
+    raw = f"{text.strip()}|{piper_voice_name}|{length_scale:.3f}|{PIPER_NOISE_SCALE:.3f}|{PIPER_NOISE_W:.3f}|{PIPER_SENTENCE_SILENCE:.3f}|piper|v{_META_VERSION}"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+    safe_voice = re.sub(r"[^\w\-]+", "_", Path(piper_voice_name).stem)[:40]
+    cache_key = f"{safe_voice}_{digest}"
+    cache_path = AUDIO_CACHE_DIR / f"{cache_key}.wav"
+    cache_meta = AUDIO_CACHE_DIR / f"{cache_key}.json"
+
+    if cache_path.exists() and cache_meta.exists():
+        log.debug("TTS cache hit for key %s", cache_key)
+        with cache_meta.open("r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+        meta["audio_path"] = str(cache_path)
+        meta["audio_url"] = f"/api/tts/audio/{cache_key}"
+        return meta
+
+    # -- Synthesis --------------------------------------------------------
+    import numpy as np
+    import soundfile as sf
+
+    piper_voice = _get_piper_voice()
+    sample_rate = piper_voice.config.sample_rate
+
+    # Piper synthesizes using SynthesisConfig and returns AudioChunk objects
+    from piper.config import SynthesisConfig
+
+    syn_config = SynthesisConfig(
+        speaker_id=None,
+        length_scale=length_scale,
+        noise_scale=PIPER_NOISE_SCALE,
+        noise_w_scale=PIPER_NOISE_W,
+        normalize_audio=True,
+        volume=1.0,
+    )
+
+    chunks = list(piper_voice.synthesize(text, syn_config=syn_config))
+
+    # Combine audio from all chunks
+    audio = np.concatenate([chunk.audio_float_array for chunk in chunks])
+
+    if len(audio) == 0:
+        log.warning("Piper produced no audio for: %s", text[:80])
+        return {"audio_url": None, "audio_path": None, "words": [],
+                "visemes": [], "duration_ms": 0}
+
+    # Write WAV
+    AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    sf.write(str(cache_path), audio, sample_rate)
+
+    # -- Generate approximate word timings for Piper -----------------------
+    # Piper doesn't provide word-level timestamps, so we approximate
+    # using the phoneme durations from the model output
+    words = _approximate_word_timings_piper(text, audio, sample_rate, length_scale)
+    visemes = _build_visemes(words)
+    duration_ms = round(len(audio) / sample_rate * 1000)
+
+    meta = {
+        "audio_url": f"/api/tts/audio/{cache_key}",
+        "audio_path": str(cache_path),
+        "words": words,
+        "visemes": visemes,
+        "duration_ms": duration_ms,
+        "rvc": False,  # RVC not applied to Piper (different sample rate)
+    }
+
+    with cache_meta.open("w", encoding="utf-8") as fh:
+        json.dump(meta, fh, indent=2)
+
+    log.info("Piper TTS generated %d words, %d ms audio", len(words), duration_ms)
+    return meta
+
+
+def _approximate_word_timings_piper(text: str, audio: "np.ndarray", sample_rate: int, length_scale: float) -> list[dict[str, Any]]:
+    """
+    Approximate word timings for Piper output.
+    Since Piper doesn't provide word-level timestamps, we estimate based on
+    text length and audio duration.
+    """
+    import re
+    words_list = re.findall(r'\S+', text)
+    if not words_list:
+        return []
+
+    total_duration_ms = len(audio) / sample_rate * 1000
+    # Rough estimate: distribute time proportionally by word length
+    total_chars = sum(len(w) for w in words_list)
+    words = []
+    current_ms = 0.0
+
+    for word in words_list:
+        word_duration_ms = (len(word) / max(total_chars, 1)) * total_duration_ms
+        words.append({
+            "word": word,
+            "phonemes": "",
+            "start_ms": round(current_ms),
+            "end_ms": round(current_ms + word_duration_ms),
+        })
+        current_ms += word_duration_ms
+
+    return words
 
 
 def prewarm() -> bool:
@@ -310,46 +577,66 @@ def prewarm() -> bool:
     """
     import numpy as np
 
+    kokoro_ok = False
+    piper_ok = False
+
+    # Warm up Kokoro for both languages if it's the active backend or if we want to be ready for switching
     try:
-        pipeline = _get_pipeline()
+        for lang in ["en", "cs"]:
+            pipeline = _get_kokoro_pipeline(lang)
+            results = list(pipeline("Warming up.", voice=KOKORO_VOICE, speed=KOKORO_SPEED))
+            chunks = [np.asarray(r.audio, dtype=np.float32)
+                      for r in results if getattr(r, "audio", None) is not None]
+            if chunks:
+                kokoro_ok = True
     except Exception as exc:  # noqa: BLE001 - TTS extras may not be installed
-        log.info("TTS prewarm skipped: %s", exc)
-        return False
+        log.info("Kokoro prewarm skipped: %s", exc)
 
-    try:
-        results = list(pipeline("Warming up.", voice=VOICE, speed=KOKORO_SPEED))
-        chunks = [np.asarray(r.audio, dtype=np.float32)
-                  for r in results if getattr(r, "audio", None) is not None]
-    except Exception as exc:  # noqa: BLE001 - never let boot fail over this
-        log.warning("Kokoro prewarm failed: %s", exc)
-        return False
+    # Warm up Piper if it's the active backend
+    if TTS_BACKEND == "piper":
+        try:
+            _get_piper_voice()
+            # Just loading the model is enough for prewarm
+            piper_ok = True
+        except Exception as exc:
+            log.warning("Piper prewarm failed: %s", exc)
+            piper_ok = False
 
-    if not chunks or not _rvc_enabled():
-        log.info("TTS prewarmed (Kokoro only)")
-        return bool(chunks)
+    if TTS_BACKEND == "kokoro":
+        if not kokoro_ok:
+            log.warning("Kokoro prewarm failed")
+            return False
 
-    # Run the warm audio through RVC so its kernels compile here too.
-    import rvc_client as rvc
-
-    AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    src = AUDIO_CACHE_DIR / "_prewarm_in.wav"
-    dst = AUDIO_CACHE_DIR / "_prewarm_out.wav"
-    try:
-        import soundfile as sf
-        sf.write(str(src), np.concatenate(chunks), SAMPLE_RATE)
-        ok = rvc.convert(str(src), str(dst)) is not None
-    except Exception as exc:  # noqa: BLE001
-        log.warning("RVC prewarm failed: %s", exc)
-        ok = False
-    finally:
-        for f in (src, dst):
+        # Run the warm audio through RVC so its kernels compile here too.
+        if kokoro_ok and _rvc_enabled():
+            import rvc_client as rvc
             try:
-                f.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-    log.info("TTS prewarmed (Kokoro%s)", " + RVC" if ok else ", RVC unavailable")
-    return True
+                import soundfile as sf
+                AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                src = AUDIO_CACHE_DIR / "_prewarm_in.wav"
+                dst = AUDIO_CACHE_DIR / "_prewarm_out.wav"
+                sf.write(str(src), np.concatenate(chunks), KOKORO_SAMPLE_RATE)
+                ok = rvc.convert(str(src), str(dst)) is not None
+                for f in (src, dst):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                log.info("TTS prewarmed (Kokoro%s)", " + RVC" if ok else ", RVC unavailable")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("RVC prewarm failed: %s", exc)
+                log.info("TTS prewarmed (Kokoro only)")
+        else:
+            log.info("TTS prewarmed (Kokoro only)")
+        return kokoro_ok
+    else:
+        # Piper backend
+        if piper_ok:
+            log.info("TTS prewarmed (Piper)")
+            return True
+        else:
+            log.warning("Piper prewarm failed")
+            return False
 
 
 def get_audio_path(cache_key: str) -> Path | None:
@@ -412,10 +699,13 @@ def _rvc_signature() -> str:
     return f"{model}:{config.RVC_PITCH}:{config.RVC_INDEX_RATE:.2f}:{config.RVC_PROTECT:.2f}"
 
 
-def _make_cache_key(text: str, voice: str, speed: float) -> str:
+def _make_cache_key(text: str, voice: str, speed: float, backend: str = "kokoro") -> str:
     """Deterministic, filesystem-safe cache key."""
     import hashlib
-    raw = f"{text.strip()}|{voice}|{speed:.3f}|{_rvc_signature()}|v{_META_VERSION}"
+    if backend == "kokoro":
+        raw = f"{text.strip()}|{voice}|{speed:.3f}|{_rvc_signature()}|v{_META_VERSION}"
+    else:
+        raw = f"{text.strip()}|{voice}|{speed:.3f}|{PIPER_NOISE_SCALE:.3f}|{PIPER_NOISE_W:.3f}|{PIPER_SENTENCE_SILENCE:.3f}|{backend}|v{_META_VERSION}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
     # A voice may be a bare name ("af_heart") or a path to a blended .pt pack;
     # use just the stem so cache filenames stay short and readable.
@@ -448,7 +738,7 @@ def _extract_word_timings(results, gaps=None) -> list[dict[str, Any]]:
             # No token data -- fall back to chunk-duration approximation
             audio = getattr(result, "audio", None)
             if audio is not None:
-                chunk_dur = (len(audio) + gap) / SAMPLE_RATE
+                chunk_dur = (len(audio) + gap) / KOKORO_SAMPLE_RATE
                 chunk_offset_seconds += chunk_dur
             continue
 
@@ -518,7 +808,7 @@ def _extract_word_timings(results, gaps=None) -> list[dict[str, Any]]:
         # silence spliced in after it.
         audio = getattr(result, "audio", None)
         if audio is not None:
-            chunk_offset_seconds += (len(audio) + gap) / SAMPLE_RATE
+                    chunk_offset_seconds += (len(audio) + gap) / KOKORO_SAMPLE_RATE
 
     # Post-process: ensure monotonic, non-overlapping, and clamp
     words = _sanitize_timings(words)
@@ -791,8 +1081,7 @@ def _sanitize_timings(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # If this word would overlap the next one, clip it
         if i + 1 < len(words):
             next_start = words[i + 1]["start_ms"]
-            if end > next_start:
-                end = next_start
+            end = min(end, next_start)
 
         out.append({
             "word": w["word"],

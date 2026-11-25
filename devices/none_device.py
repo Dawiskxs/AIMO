@@ -10,7 +10,7 @@ swallows every command it is given.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .base import AbstractDevice
 
@@ -36,7 +36,7 @@ class NoneDevice(AbstractDevice):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    def connect(self, address: Optional[str] = None) -> bool:
+    def connect(self, address: str | None = None) -> bool:
         self._update_state(connected=True)
         return True
 
@@ -47,7 +47,7 @@ class NoneDevice(AbstractDevice):
 
     # ── Commands ─────────────────────────────────────────────────────────────
 
-    def send_command(self, command: Dict[str, Any]) -> None:
+    def send_command(self, command: dict[str, Any]) -> None:
         """Swallow the command, but mirror position moves onto the gauge.
 
         A funscript or a pattern preview is worth watching on screen even with

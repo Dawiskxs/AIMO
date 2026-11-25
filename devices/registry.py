@@ -5,18 +5,17 @@ Device factory and active device singleton.
 """
 
 import logging
-from typing import Dict, Optional, Type
 
 from .base import AbstractDevice
+from .buttplug import ButtplugDevice
+from .coyote_ble import CoyoteBLE
+from .none_device import NoneDevice
 from .ossm import OSSMDevice
 from .ossm_ble import OSSMBleDevice
-from .coyote_ble import CoyoteBLE
-from .buttplug import ButtplugDevice
-from .none_device import NoneDevice
 
 log = logging.getLogger(__name__)
 
-_REGISTRY: Dict[str, Type[AbstractDevice]] = {
+_REGISTRY: dict[str, type[AbstractDevice]] = {
     "none": NoneDevice,
     "ossm": OSSMDevice,
     "ossm_ble": OSSMBleDevice,
@@ -24,7 +23,7 @@ _REGISTRY: Dict[str, Type[AbstractDevice]] = {
     "buttplug": ButtplugDevice,
 }
 
-_active_device: Optional[AbstractDevice] = None
+_active_device: AbstractDevice | None = None
 _active_type: str = "none"
 
 
@@ -56,7 +55,7 @@ def set_active_device(device_type: str, **kwargs) -> AbstractDevice:
     return _active_device
 
 
-def get_active_device() -> Optional[AbstractDevice]:
+def get_active_device() -> AbstractDevice | None:
     return _active_device
 
 

@@ -8,11 +8,12 @@ registered independently and the app can be created on demand
 
 import logging
 import sys
+
 from flask import Flask
 
 from config import LOG_LEVEL, STATIC_DIR, TEMPLATES_DIR
-from routes import register_routes
 from devices.registry import set_active_device
+from routes import register_routes
 
 
 def create_app() -> Flask:

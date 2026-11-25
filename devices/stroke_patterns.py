@@ -23,7 +23,6 @@ firmware's speed into a move duration.
 import math
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 # Speed curve, mirroring device_emulator.pattern_speed_from_pct: quadratic, so
 # the low end of the dial has usable resolution.
@@ -432,7 +431,7 @@ _PATTERN_CLASSES = {
 }
 
 
-def make_pattern(name: str) -> Optional[Pattern]:
+def make_pattern(name: str) -> Pattern | None:
     """Instantiate a pattern by AIMO name. Returns None for unknown names."""
     cls = _PATTERN_CLASSES.get(name)
     return cls() if cls else None

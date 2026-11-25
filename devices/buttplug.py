@@ -42,7 +42,7 @@ import json
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import websockets
 
@@ -112,10 +112,10 @@ class ButtplugDevice(AbstractDevice):
 
     def __init__(self):
         super().__init__()
-        self._ws_url: Optional[str] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
-        self._ws: Optional[Any] = None
+        self._ws_url: str | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._ws: Any | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
 
@@ -129,7 +129,7 @@ class ButtplugDevice(AbstractDevice):
         self._generation = 0
 
         # Discovered toys: device_index -> {name, scalars, linears, rotates}
-        self._devices: Dict[int, dict] = {}
+        self._devices: dict[int, dict] = {}
         # Which of them to drive. Empty = all of them.
         self._selected: set = set()
 
@@ -151,7 +151,7 @@ class ButtplugDevice(AbstractDevice):
         self._sensation = 0.0
 
         self._vibe_floor = _configured_floor()
-        self._last_scalar: Dict[int, float] = {}
+        self._last_scalar: dict[int, float] = {}
         self._last_direction = 1
         self._last_emit = 0.0
 
@@ -167,7 +167,7 @@ class ButtplugDevice(AbstractDevice):
         with self._lock:
             return generation == self._generation
 
-    def connect(self, address: Optional[str] = None) -> bool:
+    def connect(self, address: str | None = None) -> bool:
         # Unconditional teardown: a worker that is merely *failing* to connect
         # is still a worker, and leaving it behind is how you end up with half a
         # dozen overlapping reconnect loops fighting over self._ws.
@@ -306,7 +306,7 @@ class ButtplugDevice(AbstractDevice):
             if self._max_ping_ms > 0:
                 tasks.append(asyncio.create_task(self._ping_loop(stop)))
 
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
             for task in pending:
@@ -370,7 +370,7 @@ class ButtplugDevice(AbstractDevice):
         except Exception as exc:
             log.warning("Buttplug recv ended: %s", exc)
 
-    def _dispatch(self, raw) -> List[str]:
+    def _dispatch(self, raw) -> list[str]:
         """Handle one wire frame; returns the message names it carried."""
         try:
             frame = json.loads(raw)
@@ -445,7 +445,7 @@ class ButtplugDevice(AbstractDevice):
                 "rotates": rotates,
             }
 
-    def _device_listing(self) -> List[dict]:
+    def _device_listing(self) -> list[dict]:
         """Caller must hold _lock."""
         return [
             {
@@ -469,7 +469,7 @@ class ButtplugDevice(AbstractDevice):
             listing = self._device_listing()
         self._update_state(device_count=len(listing), devices=listing)
 
-    def _driven(self) -> List[dict]:
+    def _driven(self) -> list[dict]:
         """The toys we should be commanding right now."""
         with self._lock:
             if not self._selected:
@@ -645,7 +645,7 @@ class ButtplugDevice(AbstractDevice):
 
     # ── AbstractDevice API ────────────────────────────────────────────────────
 
-    def send_command(self, command: Dict[str, Any]) -> None:
+    def send_command(self, command: dict[str, Any]) -> None:
         """Accepts the OSSM command vocabulary plus a few Buttplug extras.
 
         Never blocks: everything mutates state that the ticker picks up, except
@@ -818,6 +818,6 @@ class ButtplugDevice(AbstractDevice):
 
     # ── Introspection for the setup UI ────────────────────────────────────────
 
-    def list_devices(self) -> List[dict]:
+    def list_devices(self) -> list[dict]:
         with self._lock:
             return self._device_listing()

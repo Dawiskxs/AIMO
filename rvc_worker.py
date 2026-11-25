@@ -50,7 +50,7 @@ def _install_caches():
     """
     patched = []
 
-    import rvc.infer.pipeline as pipeline
+    from rvc.infer import pipeline
 
     # -- RMVPE pitch predictor (measured 2.0-2.3s per construction) -----------
     real_rmvpe = pipeline.RMVPE

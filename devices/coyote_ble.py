@@ -9,7 +9,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     from bleak import BleakClient, BleakScanner
@@ -55,10 +55,10 @@ class CoyoteBLE(AbstractDevice):
 
     def __init__(self):
         super().__init__()
-        self._client: Optional[Any] = None
-        self._address: Optional[str] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
+        self._client: Any | None = None
+        self._address: str | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
         # Desired output state (protected by _lock)
@@ -93,7 +93,7 @@ class CoyoteBLE(AbstractDevice):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    def connect(self, address: Optional[str] = None) -> bool:
+    def connect(self, address: str | None = None) -> bool:
         if not BleakClient:
             log.error("bleak not installed")
             return False
@@ -338,7 +338,7 @@ class CoyoteBLE(AbstractDevice):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def send_command(self, command: Dict[str, Any]) -> None:
+    def send_command(self, command: dict[str, Any]) -> None:
         """Accepts coyote-specific commands."""
         resend_bf = False
         with self._lock:
@@ -411,7 +411,7 @@ class CoyoteBLE(AbstractDevice):
     # ── Scan ───────────────────────────────────────────────────────────────────
 
     @staticmethod
-    async def _scan_async(timeout: float = 5.0) -> List[Dict[str, Any]]:
+    async def _scan_async(timeout: float = 5.0) -> list[dict[str, Any]]:
         if not BleakScanner:
             return []
         devices = await BleakScanner.discover(timeout=timeout)
@@ -428,7 +428,7 @@ class CoyoteBLE(AbstractDevice):
         return results
 
     @staticmethod
-    def scan(timeout: float = 5.0) -> List[Dict[str, Any]]:
+    def scan(timeout: float = 5.0) -> list[dict[str, Any]]:
         """Synchronous wrapper for scan."""
         if not BleakScanner:
             return []

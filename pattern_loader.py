@@ -8,7 +8,7 @@ Each .json file in that directory describes one motion pattern.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 from config import PATTERNS_DIR
 
@@ -23,12 +23,12 @@ class PatternLoader:
 
     def __init__(self, patterns_dir: Path = PATTERNS_DIR):
         self.patterns_dir = patterns_dir
-        self._patterns: Dict[str, Dict[str, Any]] = {}
+        self._patterns: dict[str, dict[str, Any]] = {}
         self._load()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def all(self) -> Dict[str, Dict[str, Any]]:
+    def all(self) -> dict[str, dict[str, Any]]:
         """Return all loaded patterns."""
         return dict(self._patterns)
 
@@ -36,7 +36,7 @@ class PatternLoader:
         """Return sorted list of pattern names."""
         return sorted(self._patterns.keys())
 
-    def get(self, name: str) -> Dict[str, Any] | None:
+    def get(self, name: str) -> dict[str, Any] | None:
         """Return a single pattern by name, or None if not found."""
         return self._patterns.get(name)
 

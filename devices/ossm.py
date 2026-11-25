@@ -11,11 +11,12 @@ import logging
 import queue
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import websockets
 
 from config import AI_TO_DEVICE_PATTERN_MAP
+
 from .base import AbstractDevice
 
 try:
@@ -37,10 +38,10 @@ class OSSMDevice(AbstractDevice):
 
     def __init__(self):
         super().__init__()
-        self.ws_url: Optional[str] = None
+        self.ws_url: str | None = None
         self._send_queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
         self._pattern_running = False
@@ -51,7 +52,7 @@ class OSSMDevice(AbstractDevice):
 
         # Serial-only
         self._serial_write_queue: queue.Queue = queue.Queue(maxsize=50)
-        self._serial_writer_thread: Optional[threading.Thread] = None
+        self._serial_writer_thread: threading.Thread | None = None
 
         self._update_state(
             pct=0.0, steps=0, running=False, homed=False,
@@ -65,7 +66,7 @@ class OSSMDevice(AbstractDevice):
 
     # ── AbstractDevice API ────────────────────────────────────────────────────
 
-    def connect(self, address: Optional[str] = None) -> bool:
+    def connect(self, address: str | None = None) -> bool:
         if self._state.connected:
             self.disconnect()
         self.ws_url = address
@@ -92,7 +93,7 @@ class OSSMDevice(AbstractDevice):
         if self._serial_writer_thread:
             self._serial_writer_thread.join(timeout=1)
 
-    def send_command(self, command: Dict[str, Any]) -> None:
+    def send_command(self, command: dict[str, Any]) -> None:
         """Send a raw command dict."""
         if getattr(self, 'ser', None) and self.ser.is_open:
             try:

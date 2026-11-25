@@ -1,10 +1,9 @@
 import bisect
 import json
-import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Optional
 
 
 @dataclass
@@ -15,17 +14,17 @@ class ScriptAction:
 
 class FunscriptPlayer:
     def __init__(self, send_command_fn: Callable[[dict], None],
-                 on_state_change: Optional[Callable] = None):
+                 on_state_change: Callable | None = None):
         self.send_command = send_command_fn
         self.on_state_change = on_state_change
-        self.actions: List[ScriptAction] = []
-        self._start_time: Optional[float] = None
+        self.actions: list[ScriptAction] = []
+        self._start_time: float | None = None
         self._paused_offset_ms: float = 0.0
         self._running = False
         self._current_index: int = 0
-        self._timer: Optional[threading.Timer] = None
+        self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
-        self._last_filepath: Optional[str] = None
+        self._last_filepath: str | None = None
         self.latency_ms: float = 0.0
         self.invert: bool = False
 
@@ -43,7 +42,7 @@ class FunscriptPlayer:
                     return axis_actions
         return []
 
-    def load_data(self, data: dict, filepath: Optional[str] = None) -> dict:
+    def load_data(self, data: dict, filepath: str | None = None) -> dict:
         raw_actions = self._extract_actions(data)
         if not raw_actions:
             raise ValueError("No actions found in funscript")
@@ -75,8 +74,8 @@ class FunscriptPlayer:
             data = json.load(f)
         return self.load_data(data, filepath)
 
-    def set_config(self, latency_ms: Optional[float] = None,
-                   invert: Optional[bool] = None) -> dict:
+    def set_config(self, latency_ms: float | None = None,
+                   invert: bool | None = None) -> dict:
         """Update runtime playback configuration."""
         if latency_ms is not None:
             self.latency_ms = float(latency_ms)

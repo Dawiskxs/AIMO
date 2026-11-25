@@ -21,7 +21,8 @@ import asyncio
 import json
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any, Self
 
 
 class FakeBleakError(Exception):
@@ -31,27 +32,27 @@ class FakeBleakError(Exception):
 class FakeBleakClient:
     """Records writes and lets a test push notifications back."""
 
-    _instances: List["FakeBleakClient"] = []
+    _instances: list["FakeBleakClient"] = []
     _instances_lock = threading.Lock()
 
     # Set by a test to make __aenter__ raise, exercising the reconnect loop.
-    connect_error: Optional[Exception] = None
+    connect_error: Exception | None = None
 
     # By default a read echoes back whatever was last written, as the real
     # config characteristics do. Set this to stand in for firmware that
     # predates a characteristic and ignores the write. Class-level so a test
     # can arrange it before connect(), which is otherwise a race.
-    knob_readback_override: Optional[bytes] = None
+    knob_readback_override: bytes | None = None
     # Default valid firmware state for the driver's initial read. Tests may
     # override this with raw bytes to exercise retry/fallback behaviour.
-    state_readback_override: Optional[bytes] = None
+    state_readback_override: bytes | None = None
 
     def __init__(self, address: str, *args: Any, **kwargs: Any):
         self.address = address
         self.is_connected = False
-        self.writes: List[Tuple[str, bytes]] = []
-        self.notify_callbacks: Dict[str, Callable[[Any, bytearray], None]] = {}
-        self.write_error: Optional[Exception] = None
+        self.writes: list[tuple[str, bytes]] = []
+        self.notify_callbacks: dict[str, Callable[[Any, bytearray], None]] = {}
+        self.write_error: Exception | None = None
         self.command_readback: bytes = b""
         self._lock = threading.Lock()
         with FakeBleakClient._instances_lock:
@@ -85,13 +86,13 @@ class FakeBleakClient:
 
     # ── bleak surface ─────────────────────────────────────────────────────────
 
-    async def __aenter__(self) -> "FakeBleakClient":
+    async def __aenter__(self) -> Self:
         if FakeBleakClient.connect_error is not None:
             raise FakeBleakClient.connect_error
         self.is_connected = True
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> bool:
+    async def __aexit__(self, *exc_info: object) -> bool:
         self.is_connected = False
         return False
 
@@ -156,14 +157,14 @@ class FakeBleakClient:
 
     # ── Test-facing helpers ───────────────────────────────────────────────────
 
-    def writes_to(self, char: str) -> List[str]:
+    def writes_to(self, char: str) -> list[str]:
         """Decoded payloads written to one characteristic, in order."""
         target = str(char).lower()
         with self._lock:
             return [payload.decode("utf-8", "ignore")
                     for uuid, payload in self.writes if uuid == target]
 
-    def commands(self) -> List[str]:
+    def commands(self) -> list[str]:
         from devices.ossm_ble import COMMAND_CHAR
         return self.writes_to(COMMAND_CHAR)
 
@@ -200,7 +201,7 @@ class FakeBleakClient:
 
 
 class FakeAdvertisementData:
-    def __init__(self, local_name: str = "", service_uuids: Optional[List[str]] = None,
+    def __init__(self, local_name: str = "", service_uuids: list[str] | None = None,
                  rssi: int = -60):
         self.local_name = local_name
         self.service_uuids = service_uuids or []
@@ -216,10 +217,10 @@ class FakeBLEDevice:
 class FakeBleakScanner:
     """Returns a canned discovery result in the return_adv=True shape."""
 
-    discovered: Dict[str, Tuple[FakeBLEDevice, FakeAdvertisementData]] = {}
+    discovered: dict[str, tuple[FakeBLEDevice, FakeAdvertisementData]] = {}
 
     @classmethod
-    def set_discovered(cls, entries: List[Tuple[str, str, List[str]]]) -> None:
+    def set_discovered(cls, entries: list[tuple[str, str, list[str]]]) -> None:
         cls.discovered = {
             address: (FakeBLEDevice(address, name),
                       FakeAdvertisementData(name, uuids))
@@ -237,7 +238,7 @@ class FakeBleakScanner:
 
 def install(monkeypatch) -> None:
     """Point devices.ossm_ble at the fakes and reset their state."""
-    import devices.ossm_ble as ossm_ble
+    from devices import ossm_ble
 
     FakeBleakClient.reset()
     FakeBleakScanner.discovered = {}

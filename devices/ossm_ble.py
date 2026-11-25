@@ -53,7 +53,7 @@ import logging
 import threading
 import time
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     from bleak import BleakClient, BleakScanner
@@ -62,6 +62,7 @@ except ImportError:  # pragma: no cover - bleak is a hard dep, but stay importab
     BleakScanner = None  # type: ignore
 
 from config import AI_TO_DEVICE_PATTERN_MAP
+
 from .base import AbstractDevice
 from .stroke_patterns import make_pattern
 
@@ -154,7 +155,7 @@ def clamp_pct(value: Any) -> int:
     normalised here or the command is a no-op.
     """
     try:
-        result = int(round(float(value)))
+        result = round(float(value))
     except (TypeError, ValueError):
         return 0
     return max(0, min(100, result))
@@ -197,17 +198,17 @@ class OSSMBleDevice(AbstractDevice):
 
     def __init__(self):
         super().__init__()
-        self._address: Optional[str] = None
-        self._client: Optional[Any] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
+        self._address: str | None = None
+        self._client: Any | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.RLock()
 
         # Desired vs applied: the whole reconciliation story.
-        self._desired: Dict[str, int] = dict(STROKE_ENGINE_DEFAULTS)
+        self._desired: dict[str, int] = dict(STROKE_ENGINE_DEFAULTS)
         self._desired["pattern"] = 0
-        self._applied: Dict[str, int] = {}
+        self._applied: dict[str, int] = {}
         self._want_running = False
         # Narrative/user Pause is a speed-zero hold inside StrokeEngine.  It is
         # deliberately distinct from the explicit user Stop, which auto-parks.
@@ -226,8 +227,8 @@ class OSSMBleDevice(AbstractDevice):
 
         self._fw_state = ""
         self._session_id = ""
-        self._fw_timestamp: Optional[Any] = None
-        self._fw_position: Optional[float] = None
+        self._fw_timestamp: Any | None = None
+        self._fw_position: float | None = None
         self._fw_speed = 0
 
         # Explicit user Stop auto-park state. Narrative/user Pause uses a separate
@@ -238,20 +239,20 @@ class OSSMBleDevice(AbstractDevice):
         self._park_started_at = 0.0
         self._park_phase_started_at = 0.0
         self._park_last_probe_at = 0.0
-        self._park_last_timestamp: Optional[Any] = None
-        self._park_last_position: Optional[float] = None
+        self._park_last_timestamp: Any | None = None
+        self._park_last_position: float | None = None
         self._park_descending_count = 0
         self._park_return_confirmed = False
         self._park_return_setup_sent = False
         self._park_final_stop_armed = False
         self._park_low_before_final_logged = False
-        self._park_last_ramp_speed: Optional[int] = None
+        self._park_last_ramp_speed: int | None = None
         self._park_last_ramp_at = 0.0
-        self._park_return_start_position: Optional[float] = None
+        self._park_return_start_position: float | None = None
         self._park_menu_sent = False
         self._park_probe_depth = PARK_PROBE_DEPTH_A
         self._park_entry_speed = PARK_SPEED_CAP
-        self._park_saved_desired: Dict[str, int] = {}
+        self._park_saved_desired: dict[str, int] = {}
         self._park_blocked = False
         # Set when an AI/user command asks for motion while a park from a
         # *previous* session is still in flight. That command's pattern/speed
@@ -263,7 +264,7 @@ class OSSMBleDevice(AbstractDevice):
 
         # Simulated position.
         self._pattern = None
-        self._pattern_name: Optional[str] = None
+        self._pattern_name: str | None = None
         self._pattern_index = 0
         self._sim_speed = 0.0
         self._sim_depth = 0.0
@@ -294,7 +295,7 @@ class OSSMBleDevice(AbstractDevice):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    def connect(self, address: Optional[str] = None) -> bool:
+    def connect(self, address: str | None = None) -> bool:
         if not BleakClient:
             log.error("bleak not installed")
             return False
@@ -386,7 +387,7 @@ class OSSMBleDevice(AbstractDevice):
                                     and str(candidate.get("state", "") or "").strip()):
                                 initial_payload = candidate
                                 break
-                        except (ValueError, UnicodeDecodeError) as exc:
+                        except (ValueError, UnicodeDecodeError):
                             pass
                         except Exception as exc:
                             log.debug(
@@ -528,7 +529,7 @@ class OSSMBleDevice(AbstractDevice):
         self._update_state(paused=False, parked=False, park_error="")
 
     @staticmethod
-    def _coerce_position(value: Any) -> Optional[float]:
+    def _coerce_position(value: Any) -> float | None:
         try:
             position = float(value)
         except (TypeError, ValueError):
@@ -536,7 +537,7 @@ class OSSMBleDevice(AbstractDevice):
         return position if position == position else None
 
     @staticmethod
-    def _is_park_position(position: Optional[float]) -> bool:
+    def _is_park_position(position: float | None) -> bool:
         return (position is not None
                 and PARK_ZONE_MIN <= position <= PARK_ZONE_MAX)
 
@@ -669,7 +670,7 @@ class OSSMBleDevice(AbstractDevice):
             position_mm=self._fw_position,
         )
 
-    def _compute_park_ramp_speed(self, position: Optional[float]) -> int:
+    def _compute_park_ramp_speed(self, position: float | None) -> int:
         """Exact Partner beta14a proportional ramp, translated to Python."""
         entry_speed = clamp_pct(self._park_entry_speed)
         if position is None:
@@ -709,14 +710,14 @@ class OSSMBleDevice(AbstractDevice):
             min(max_speed, clamp_pct(speed)),
         )
 
-    def _plan_park(self, now: float) -> List[str]:
+    def _plan_park(self, now: float) -> list[str]:
         """Advance the Partner beta14a main auto-park state machine.
 
         The main proportional ramp is ported exactly. The abandoned final
         micro-recovery is deliberately absent: a near-low final position never
         starts another revolution.
         """
-        commands: List[str] = []
+        commands: list[str] = []
         position = self._fw_position
 
         if now - self._park_started_at > PARK_TOTAL_TIMEOUT:
@@ -899,7 +900,7 @@ class OSSMBleDevice(AbstractDevice):
                 f"{last_text or 'empty'}")
         return last_text
 
-    def _drain_plan(self) -> List[tuple[int, str]]:
+    def _drain_plan(self) -> list[tuple[int, str]]:
         with self._lock:
             epoch = self._command_epoch
             pending = list(self._outbox)
@@ -909,13 +910,13 @@ class OSSMBleDevice(AbstractDevice):
                 pass
             return [(epoch, command) for command in pending]
 
-    def _plan(self, now: float) -> List[str]:
+    def _plan(self, now: float) -> list[str]:
         """Commands that would bring the device in line with what we want.
 
         Caller must hold the lock. Kept free of I/O so the ordering rules can be
         tested without a BLE stack.
         """
-        commands: List[str] = []
+        commands: list[str] = []
         if self._parking:
             return self._plan_park(now)
 
@@ -970,12 +971,12 @@ class OSSMBleDevice(AbstractDevice):
         raw_text = bytes(data).decode("utf-8", "ignore")
         try:
             payload = json.loads(raw_text)
-        except (ValueError, UnicodeDecodeError) as exc:
+        except (ValueError, UnicodeDecodeError):
             return
         if isinstance(payload, dict):
             self.ingest_state(payload)
 
-    def ingest_state(self, payload: Dict[str, Any]) -> None:
+    def ingest_state(self, payload: dict[str, Any]) -> None:
         """Apply one getCurrentState() payload from the device."""
         fw_state = str(payload.get("state", "") or "")
         session = str(payload.get("sessionId", "") or "")
@@ -1121,7 +1122,7 @@ class OSSMBleDevice(AbstractDevice):
                 log.debug("OSSM BLE tick error: %s", exc)
             await asyncio.sleep(TICK_INTERVAL)
 
-    def tick(self, now: Optional[float] = None) -> None:
+    def tick(self, now: float | None = None) -> None:
         """Advance the simulated carriage one frame."""
         if now is None:
             now = time.monotonic()
@@ -1185,7 +1186,7 @@ class OSSMBleDevice(AbstractDevice):
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
-    def send_command(self, command: Dict[str, Any]) -> None:
+    def send_command(self, command: dict[str, Any]) -> None:
         """Accept the OSSM command vocabulary and fold it into desired state."""
         cmd = command.get("cmd")
 
@@ -1238,7 +1239,7 @@ class OSSMBleDevice(AbstractDevice):
             else:
                 log.debug("OSSM BLE ignoring unknown command: %s", command)
 
-    def apply_ai_commands(self, commands: Dict[str, Any]) -> None:
+    def apply_ai_commands(self, commands: dict[str, Any]) -> None:
         """Apply a compiled intent. Ordering is irrelevant — see module docs.
 
         Deliberately not gated on being connected: this only records intent,
@@ -1326,11 +1327,11 @@ class OSSMBleDevice(AbstractDevice):
     # ── Scan ──────────────────────────────────────────────────────────────────
 
     @staticmethod
-    async def _scan_async(timeout: float = 6.0) -> List[Dict[str, Any]]:
+    async def _scan_async(timeout: float = 6.0) -> list[dict[str, Any]]:
         if not BleakScanner:
             return []
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         try:
             found = await BleakScanner.discover(timeout=timeout, return_adv=True)
             for device, adv in found.values():
@@ -1359,7 +1360,7 @@ class OSSMBleDevice(AbstractDevice):
         return results
 
     @staticmethod
-    def scan(timeout: float = 6.0) -> List[Dict[str, Any]]:
+    def scan(timeout: float = 6.0) -> list[dict[str, Any]]:
         """Synchronous wrapper for scan."""
         if not BleakScanner:
             return []

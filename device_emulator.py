@@ -9,11 +9,10 @@ Replicates the C++ firmware behaviour over stdio/serial JSON.
 import asyncio
 import json
 import math
-import sys
-import time
-import threading
 import queue
-from typing import Optional
+import sys
+import threading
+import time
 
 try:
     import serial
@@ -64,17 +63,13 @@ def constrain(val, min_val, max_val):
 # =============================================================
 
 def fscale(originalMin, originalMax, newBegin, newEnd, inputValue, curve):
-    if curve > 10:
-        curve = 10
-    if curve < -10:
-        curve = -10
+    curve = min(curve, 10)
+    curve = max(curve, -10)
     curve = (curve * -0.1)
     curve = math.pow(10, curve)
 
-    if inputValue < originalMin:
-        inputValue = originalMin
-    if inputValue > originalMax:
-        inputValue = originalMax
+    inputValue = max(inputValue, originalMin)
+    inputValue = min(inputValue, originalMax)
 
     OriginalRange = originalMax - originalMin
     invFlag = False
@@ -489,8 +484,8 @@ class MotorSimulator:
         self.target_speed = float(speed_hz)
         self.target_accel = float(accel_hz)
 
-    def moveTo(self, target: int, speed_hz: Optional[float] = None,
-               accel_hz: Optional[float] = None):
+    def moveTo(self, target: int, speed_hz: float | None = None,
+               accel_hz: float | None = None):
         self.mode = self.MODE_MOVE_TO
         self.target_pos = float(target)
         if speed_hz is not None:
@@ -498,8 +493,8 @@ class MotorSimulator:
         if accel_hz is not None:
             self.target_accel = float(accel_hz)
 
-    def runForward(self, speed_hz: Optional[float] = None,
-                   accel_hz: Optional[float] = None):
+    def runForward(self, speed_hz: float | None = None,
+                   accel_hz: float | None = None):
         self.mode = self.MODE_RUN
         self.run_dir = 1
         if speed_hz is not None:
@@ -507,8 +502,8 @@ class MotorSimulator:
         if accel_hz is not None:
             self.target_accel = float(accel_hz)
 
-    def runBackward(self, speed_hz: Optional[float] = None,
-                    accel_hz: Optional[float] = None):
+    def runBackward(self, speed_hz: float | None = None,
+                    accel_hz: float | None = None):
         self.mode = self.MODE_RUN
         self.run_dir = -1
         if speed_hz is not None:
@@ -533,7 +528,7 @@ class MotorSimulator:
         self.target_pos = self.pos
 
     def getCurrentPosition(self) -> int:
-        return int(round(self.pos))
+        return round(self.pos)
 
     def getAcceleration(self) -> float:
         return self.target_accel
@@ -596,9 +591,7 @@ class MotorSimulator:
             return
         dir = 1.0 if target_vel > self.vel else -1.0
         new_vel = self.vel + self.target_accel * dt * dir
-        if dir > 0 and new_vel > target_vel:
-            new_vel = target_vel
-        elif dir < 0 and new_vel < target_vel:
+        if dir > 0 and new_vel > target_vel or dir < 0 and new_vel < target_vel:
             new_vel = target_vel
         self.vel = new_vel
 
