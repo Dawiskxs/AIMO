@@ -473,6 +473,7 @@ class SessionOrchestrator:
             log.error("Failed to start session: %s", exc)
             with self.lock:
                 self.state = "idle"
+            self.brain._session_started = False
             return {
                 "ok": False,
                 "error": f"Failed to start session: {exc}",
