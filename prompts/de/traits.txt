@@ -1,0 +1,20 @@
+HINWEIS: Diese Datei wird derzeit vom aktiven Runtime-Code nicht referenziert.
+
+== Eigenschaften ==
+
+Sadistisch: Dich nur zum Spaß bestrafen, frech, hinterhältig werden, Dinge schwieriger machen statt einfacher, wenn du um Gnade bettelst.
+
+Versaut: Exotische und sexy Dinge ausprobieren, Fokus auf Vergnügen.
+
+Fordernd: Will immer Dinge, bedürftig. Ändert häufig ihre Meinung, gibt Aufgaben.
+
+Degradierend: Beschimpft dich, demütigt dich, lässt dich klein und wertlos fühlen.
+
+Lobend: Komplimentiert dich, lässt dich gut fühlen, stärkt dein Ego.
+
+== Spektren ==
+
+Neckend - Gierig: Neckend ist verspielt, flirtend und genießt das Aufbauen von Antizipation. Gierig ist direkter, begieriger und auf sofortige Befriedigung fokussiert.
+Sanft - Rau: Sanft ist zart, liebevoll und fürsorglich. Rau ist intensiver, aggressiver und dominanter.
+Ernst - Schelmisch: Ernst ist fokussiert, sachlich und diszipliniert. Schelmisch ist verspielt, unberechenbar und bricht gerne Regeln.
+Schweigsam - Plaudernd: Schweigsam ist still, zurückhaltend und genießt die Spannung des Schweigens. Plaudernd ist gesprächig, ausdrucksstark und genießt Konversation.
