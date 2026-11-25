@@ -21,11 +21,15 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
-from intent_compiler import IntentCompiler
 
-from device_bridge import get_bridge
-from devices.registry import get_active_type
-
+import tts
+from ai_connector import (
+    GoogleAIConnector,
+    GroqAIConnector,
+    OllamaAIConnector,
+    OpenRouterAIConnector,
+)
+from brain import Brain
 from config import (
     BIG_MODEL_RETRY_DELAY,
     DEFAULT_TURNS,
@@ -45,19 +49,14 @@ from config import (
     OPENROUTER_TIMEOUT,
     VIDEO_CHANCE,
 )
-from ai_connector import (
-    GoogleAIConnector,
-    GroqAIConnector,
-    OllamaAIConnector,
-    OpenRouterAIConnector,
-)
-from brain import Brain
+from device_bridge import get_bridge
+from devices.registry import get_active_type
 from feedback_store import add_banned_phrase, remove_banned_phrase
+from intent_compiler import IntentCompiler
 from response_parser import Commands, ResponseParser, Turn
 from session_manager import SessionManager
 from settings_store import load_settings
 from stash_client import StashClient
-import tts
 
 log = logging.getLogger(__name__)
 
@@ -154,6 +153,9 @@ class SessionOrchestrator:
         self.big_connector.model = default_model
 
         self.brain = Brain()
+        # Set prompt builder language from settings
+        language = self._settings.get("language", "en")
+        self.brain.prompt_builder.set_language(language)
         self.parser = ResponseParser()
         self.session = SessionManager()
 
@@ -232,6 +234,12 @@ class SessionOrchestrator:
             voice=s.get("kokoro_voice"),
             speed=s.get("kokoro_speed"),
             device=s.get("kokoro_device"),
+                    backend=s.get("tts_backend"),
+                    piper_voice=s.get("piper_voice"),
+                    piper_speed=s.get("piper_speed"),
+                    piper_noise_scale=s.get("piper_noise_scale"),
+                    piper_noise_w=s.get("piper_noise_w"),
+                    piper_sentence_silence=s.get("piper_sentence_silence"),
         )
         try:
             import rvc_client as rvc
@@ -245,6 +253,11 @@ class SessionOrchestrator:
 
     def apply_settings(self, settings: dict[str, str]) -> dict[str, str]:
         """Update live connectors and prompt assets from saved settings."""
+        # Check if language changed and we need to restart the session
+        old_language = self._settings.get("language", "en")
+        new_language = settings.get("language", "en")
+        language_changed = old_language != new_language
+        
         self._settings.update(settings)
         self._apply_tunables()
         self._push_collaborator_settings()
@@ -287,7 +300,37 @@ class SessionOrchestrator:
             proxy_address=self._settings.get("stash_proxy_address", ""),
         )
 
-        self.brain.prompt_builder.reload()
+        # Update prompt builder language (set_language already calls reload)
+        language = self._settings.get("language", "en")
+        self.brain.prompt_builder.set_language(language)
+        
+        # If language changed, ensure clean state for next session
+        if language_changed:
+            if self.brain._session_started:
+                log.info("Language changed from %s to %s; restarting AI session", old_language, new_language)
+                self._restart_ai_session()
+            else:
+                # No active session, but ensure clean slate for next start()
+                # End ALL connector sessions to clear any residual server-side state
+                for connector in (self.google_connector, self.groq_connector, self.openrouter_connector, self.ollama_connector):
+                    try:
+                        connector.end_session()
+                    except Exception as exc:
+                        log.warning("Error ending %s session during language change: %s", connector.__class__.__name__, exc)
+                # Also end the current big_connector
+                try:
+                    self.big_connector.end_session()
+                except Exception as exc:
+                    log.warning("Error ending big_connector session during language change: %s", exc)
+                self.session.clear()
+                self.brain.clear_session()
+                with self.lock:
+                    self._pending.clear()
+                    self._displayed.clear()
+                    self._display_index = 0
+                    self._big_in_flight = False
+                log.info("Language changed from %s to %s; cleared all connector sessions and session state for next start", old_language, new_language)
+        
         return self._settings
 
     def reload_prompts(self) -> None:
@@ -369,8 +412,10 @@ class SessionOrchestrator:
             get_persona_moods,
         )
 
-        resolved_persona = _pick_or_random(persona, get_persona_moods())
-        resolved_pacing = _pick_or_random(pacing, get_pacing_strategies())
+        # Use current language from settings for prompt loading
+        current_language = self._settings.get("language", "en")
+        resolved_persona = _pick_or_random(persona, get_persona_moods(current_language))
+        resolved_pacing = _pick_or_random(pacing, get_pacing_strategies(current_language))
 
         with self.lock:
             self.state = "running"
@@ -402,6 +447,7 @@ class SessionOrchestrator:
                 device_type=device_type,
             )
             self.big_connector.start_session(system_prompt)
+            self.brain._session_started = True
             log.info(
                 "Started chat session with %s (device profile: %s)",
                 self.big_connector.model,
@@ -487,6 +533,7 @@ class SessionOrchestrator:
             self._display_index = 0
             self.session.clear()
             self.brain.clear_session()
+            self.brain._session_started = False
             self._big_in_flight = False
 
             # End the chat session
@@ -497,6 +544,52 @@ class SessionOrchestrator:
 
             log.info("Session cleared")
         return self.status
+
+    def _restart_ai_session(self) -> None:
+        """Restart the AI session with current settings (used when language changes)."""
+        # End current session
+        try:
+            self.big_connector.end_session()
+        except Exception as exc:
+            log.warning("Error ending session during language change: %s", exc)
+    
+        # Clear session state
+        self.session.clear()
+        self.brain.clear_session()
+    
+        # Reset display state
+        with self.lock:
+            self._pending.clear()
+            self._displayed.clear()
+            self._display_index = 0
+            self._big_in_flight = False
+
+        # Start new session with current device type
+        device_type = get_active_type()
+        system_prompt = self.brain.get_system_prompt(
+            video_enabled=self.video_enabled,
+            device_type=device_type,
+        )
+        self.big_connector.start_session(system_prompt)
+        self.brain._session_started = True
+    
+        # Send seed prompt with current persona and pacing
+        seed_prompt = self.brain.build_seed_prompt(
+            selected_persona=self._persona,
+            selected_pacing=self._pacing,
+        )
+        raw_text = self.big_connector.send_message(seed_prompt)
+        turns = self.parser.parse(raw_text)
+    
+        if turns:
+            self._compile_turns(turns)
+            self._displayed.extend(turns)
+            self.brain.record_turns(turns)
+            # Trigger display loop
+            if self.state == "running":
+                self._pending.append(turns[0])
+    
+        log.info("AI session restarted with language: %s", self._settings.get("language", "en"))
 
     # ── Poll: read-only, returns newly displayed items ──────────────────────
 
@@ -509,7 +602,7 @@ class SessionOrchestrator:
                 "total": len(self._displayed),
                 "state": self.state,
                 "pending_count": len(self._pending),
-            }
+        }
 
     # ── Feedback: user reactions to displayed turns ─────────────────────────
 
@@ -526,8 +619,8 @@ class SessionOrchestrator:
             the in-memory Turn. It influences prompts only while that turn
             remains within ``BANNED_PHRASE_WINDOW``.
           - ``clear`` — remove that transient reaction.
-          - ``ban`` — persist the spoken line to the cross-session banned store
-            so it is never said again. Independent of the transient reaction.
+              - ``ban`` — persist the spoken line to the cross-session banned store
+                so it is never said again. Independent of the transient reaction.
           - ``unban`` — remove the spoken line from the banned store.
 
         Display index N maps to ``brain.session_turns[N]`` because turns are
@@ -793,7 +886,9 @@ class SessionOrchestrator:
 
         if speech.strip() and self.tts_enabled:
             try:
-                tts_meta = tts.synthesize(speech)
+                        # Get current language from settings for TTS voice selection
+                        language = self._settings.get("language", "en")
+                        tts_meta = tts.synthesize(speech, language=language)
             except Exception as exc:
                 log.warning("TTS synthesis failed for turn %d: %s", turn.index, exc)
                 tts_meta = {
