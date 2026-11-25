@@ -298,8 +298,13 @@ async function loadSettings() {
   populateSelect($settings('settings-avatar-model'), settingsState.avatarModels, data.avatar_model || '');
 
     // Populate available languages from server
+    // API returns [{code: 'en', name: 'English'}, ...] but populateSelect expects {id, label}
     if (data.available_languages) {
-      populateSelect($settings('settings-language'), data.available_languages, data.language || 'en');
+      const langOptions = data.available_languages.map(lang => ({
+        id: lang.code,
+        label: lang.name
+      }));
+      populateSelect($settings('settings-language'), langOptions, data.language || 'en');
     }
 
   fillSettingFields(data);
