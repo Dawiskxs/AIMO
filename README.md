@@ -38,6 +38,7 @@ of the Flask process.
   - [Speaking avatar](#speaking-avatar)
 - [Settings](#settings)
 - [Prompt storage](#prompt-storage)
+- [Language support](#language-support)
 - [Authoring intents and patterns](#authoring-intents-and-patterns)
 - [HTTP API](#http-api)
 - [Project structure](#project-structure)
@@ -500,19 +501,72 @@ via environment variables.
 
 ---
 
+## Language support
+
+The system **automatically discovers available languages** by scanning the
+`prompts/` directory for valid ISO 639-1 language codes (2-letter lowercase)
+that contain the required prompt files (`full_prompt.txt` or `system_prompt.txt`).
+
+Supported languages (built-in):
+- `en` — English
+- `cs` — Čeština (Czech)
+- `de` — Deutsch (German)
+
+**Adding a new language:**
+1. Create a directory `prompts/{code}/` (e.g., `prompts/fr/`)
+2. Add the required files:
+   - `full_prompt.txt` — main system prompt
+   - `system_prompt.txt` — legacy prompt
+   - `devices/generic.txt` — generic device profile
+   - `seeds/persona_moods.txt` — at least one mood
+   - `seeds/pacing_strategies.txt` — at least one strategy
+   - `tasks/user_turn_task.txt` — task template with `{n_turns}`
+3. Optional: add examples in `examples/big/`, device-specific profiles in `devices/`
+4. Restart or reload settings — the language appears automatically in the
+   Settings dropdown
+
+No code changes required!
+
+---
+
 ## Prompt storage
 
-Prompts live under `prompts/` in two layers:
+Prompts live under `prompts/` in a three-layer hierarchy:
 
-- `prompts/base/` — immutable source files (the system prompt, seeds, examples, tasks, traits, wordlist).
-- `prompts/current/` — editable overrides (created the first time one is saved).
-- `prompts/catalog/` — additional packaged bundles (read-only).
+```
+prompts/
+├── base/              # immutable source files (shipped with app)
+├── current/           # editable overrides (user uploads)
+└── {lang}/            # language-specific prompts (en, cs, de, etc.)
+    ├── full_prompt.txt
+    ├── system_prompt.txt
+    ├── devices/
+    │   ├── generic.txt
+    │   ├── ossm.txt
+    │   ├── coyote.txt
+    │   ├── buttplug.txt
+    │   └── none.txt
+    ├── examples/
+    │   └── big/
+    ├── seeds/
+    │   ├── persona_moods.txt
+    │   └── pacing_strategies.txt
+    ├── tasks/
+    │   └── user_turn_task.txt
+    ├── wordlist.txt
+    └── traits.txt
+```
 
-When a prompt is read, `prompt_store.py` checks `current/` first and falls back to
-`base/`. Uploading writes to `current/` under the same relative filename; **only names
-that already exist in `base/` are accepted**. The Settings tab can download the resolved
-file, upload an override, or **Revert** (delete all `current/` overrides) to return to
-the base versions. Editing prompts reloads them live via `orchestrator.reload_prompts()`.
+Resolution order (first match wins):
+1. `prompts/current/{lang}/...` — user overrides
+2. `prompts/{lang}/...` — language-specific base files
+3. `prompts/base/...` — fallback base files (English)
+
+When a prompt is read, `prompt_store.py` checks this hierarchy. Editing
+prompts reloads them live via `orchestrator.reload_prompts()`.
+
+The Settings tab can download the resolved file, upload an override, or
+**Revert** (delete all `current/` overrides) to return to the base versions.
 
 ---
 
@@ -637,7 +691,7 @@ AIMO/
 │   └── registry.py         # Active-device factory/singleton
 ├── intents/                # <intent>/<intensity-band>.json
 ├── patterns/               # Motion patterns + custom/ and funscripts/ + videos/
-├── prompts/{base,current,catalog}/
+├── prompts/{base,current,catalog,en,cs,de}/
 ├── templates/              # index.html + tab_*.html partials
 ├── static/
 │   ├── css/, js/           # UI styles and per-tab scripts (incl. avatar.js)
