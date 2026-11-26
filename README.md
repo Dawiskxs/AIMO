@@ -179,15 +179,15 @@ git push origin v1.0.0
 ## Architecture
 
 ```
-                                  ┌──────────────────────────────────────────┐
+                                  ┌────────────────────────────────────────────┐
    Browser (tabbed UI)            │            SessionOrchestrator             │
    ┌──────────────┐   HTTP/SSE    │                                            │
-   │ setup/manual │ ─────────────▶│   generator loop ──┐      ┌── display loop │
+   │ setup/manual │ ────────────▶│   generator loop ──┐      ┌── display loop  │
    │ ai/funscript │               │   (producer)       │      │  (consumer)    │
-   │ settings     │ ◀──── poll ───│        │            ▼      ▼                │
+   │ settings     │ ◀─── poll ───│        │            ▼      ▼                │
    └──────────────┘               │        │      ┌───────────────┐            │
                                   │        │      │ pending buffer│            │
-        routes.py  ──────────────▶│        ▼      └───────────────┘            │
+        routes.py  ─────────────▶│        ▼      └───────────────┘            │
                                   │   AI connector       │                     │
                                   │ (Google/Groq/OpenR.) │ every DISPLAY_      │
                                   │        │             │ INTERVAL seconds    │
@@ -196,7 +196,7 @@ git push origin v1.0.0
                                   │        │             │                     │
                                   │        ▼             ▼                     │
                                   │   Brain/Session   DeviceState → device     │
-                                  │   PromptBuilder      │      TTS synth       │
+                                  │   PromptBuilder      │      TTS synth      │
                                   └──────────────────────┼─────────────────────┘
                                                          ▼
                               OSSM (WS/serial) · Coyote (BLE) · Stash video/funscript
